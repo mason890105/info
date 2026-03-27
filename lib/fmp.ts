@@ -1,4 +1,4 @@
-import Redis from "ioredis";
+﻿import Redis from "ioredis";
 
 const FMP_KEY = process.env.FMP_API_KEY!;
 const FMP_BASE = "https://financialmodelingprep.com/stable";
@@ -37,17 +37,9 @@ async function fmpFetch<T>(path: string, params: Record<string, string> = {}): P
 }
 
 export interface Quote {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercentage: number;
-  dayHigh: number;
-  dayLow: number;
-  volume: number;
-  marketCap: number;
-  open: number;
-  previousClose: number;
+  symbol: string; name: string; price: number; change: number;
+  changePercentage: number; dayHigh: number; dayLow: number;
+  volume: number; marketCap: number; open: number; previousClose: number;
 }
 
 export async function getQuote(symbol: string): Promise<Quote> {
@@ -65,22 +57,11 @@ export async function getBatchQuotes(symbols: string[]): Promise<Quote[]> {
 }
 
 export interface Candle {
-  symbol: string;
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  change: number;
-  changePercent: number;
+  symbol: string; date: string; open: number; high: number;
+  low: number; close: number; volume: number; change: number; changePercent: number;
 }
 
-export async function getDailyCandles(
-  symbol: string,
-  from?: string,
-  to?: string
-): Promise<Candle[]> {
+export async function getDailyCandles(symbol: string, from?: string, to?: string): Promise<Candle[]> {
   const params: Record<string, string> = { symbol: symbol.toUpperCase() };
   if (from) params.from = from;
   if (to) params.to = to;
@@ -91,106 +72,79 @@ export async function getDailyCandles(
 }
 
 export interface IncomeStatement {
-  date: string;
-  symbol: string;
-  revenue: number;
-  grossProfit: number;
-  grossProfitRatio: number;
-  operatingIncome: number;
-  netIncome: number;
-  eps: number;
-  ebitda: number;
+  date: string; symbol: string; revenue: number; grossProfit: number;
+  grossProfitRatio: number; operatingIncome: number; netIncome: number; eps: number; ebitda: number;
 }
-
 export interface BalanceSheet {
-  date: string;
-  totalAssets: number;
-  totalLiabilities: number;
-  totalStockholdersEquity: number;
-  cashAndCashEquivalents: number;
-  totalDebt: number;
+  date: string; totalAssets: number; totalLiabilities: number;
+  totalStockholdersEquity: number; cashAndCashEquivalents: number; totalDebt: number;
 }
-
 export interface CashFlowStatement {
-  date: string;
-  operatingCashFlow: number;
-  capitalExpenditure: number;
-  freeCashFlow: number;
-  dividendsPaid: number;
+  date: string; operatingCashFlow: number; capitalExpenditure: number;
+  freeCashFlow: number; dividendsPaid: number;
 }
 
 type Period = "annual" | "quarter";
 
-export async function getIncomeStatements(
-  symbol: string,
-  period: Period = "quarter",
-  limit = 8
-): Promise<IncomeStatement[]> {
+export async function getIncomeStatements(symbol: string, period: Period = "quarter", limit = 8): Promise<IncomeStatement[]> {
   return cached(`income:${symbol}:${period}:${limit}`, TTL.financials, () =>
-    fmpFetch<IncomeStatement[]>(`/income-statement`, {
-      symbol: symbol.toUpperCase(), period, limit: String(limit),
-    })
+    fmpFetch<IncomeStatement[]>(`/income-statement`, { symbol: symbol.toUpperCase(), period, limit: String(limit) })
   );
 }
-
-export async function getBalanceSheets(
-  symbol: string,
-  period: Period = "quarter",
-  limit = 8
-): Promise<BalanceSheet[]> {
+export async function getBalanceSheets(symbol: string, period: Period = "quarter", limit = 8): Promise<BalanceSheet[]> {
   return cached(`balance:${symbol}:${period}:${limit}`, TTL.financials, () =>
-    fmpFetch<BalanceSheet[]>(`/balance-sheet-statement`, {
-      symbol: symbol.toUpperCase(), period, limit: String(limit),
-    })
+    fmpFetch<BalanceSheet[]>(`/balance-sheet-statement`, { symbol: symbol.toUpperCase(), period, limit: String(limit) })
   );
 }
-
-export async function getCashFlows(
-  symbol: string,
-  period: Period = "quarter",
-  limit = 8
-): Promise<CashFlowStatement[]> {
+export async function getCashFlows(symbol: string, period: Period = "quarter", limit = 8): Promise<CashFlowStatement[]> {
   return cached(`cashflow:${symbol}:${period}:${limit}`, TTL.financials, () =>
-    fmpFetch<CashFlowStatement[]>(`/cash-flow-statement`, {
-      symbol: symbol.toUpperCase(), period, limit: String(limit),
-    })
+    fmpFetch<CashFlowStatement[]>(`/cash-flow-statement`, { symbol: symbol.toUpperCase(), period, limit: String(limit) })
   );
 }
 
-export interface RSIPoint { date: string; rsi: number }
-export interface MACDPoint { date: string; macd: number; signal: number; histogram: number }
-export interface MAPoint { date: string; sma?: number; ema?: number }
-
-type MAPeriod = 10 | 20 | 50 | 100 | 200;
-
-export async function getRSI(symbol: string, period = 14, limit = 100): Promise<RSIPoint[]> {
-  return cached(`rsi:${symbol}:${period}`, TTL.indicator, () =>
-    fmpFetch<RSIPoint[]>(`/technical-indicator/daily`, {
-      symbol: symbol.toUpperCase(), type: "rsi", period: String(period), limit: String(limit),
-    })
-  );
+export interface IndicatorPoint {
+  date: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+  sma?: number;
+  ema?: number;
+  macd?: number;
+  signal?: number;
+  histogram?: number;
+  obv?: number;
 }
 
-export async function getMACD(symbol: string, limit = 100): Promise<MACDPoint[]> {
-  return cached(`macd:${symbol}`, TTL.indicator, () =>
-    fmpFetch<MACDPoint[]>(`/technical-indicator/daily`, {
-      symbol: symbol.toUpperCase(), type: "macd", limit: String(limit),
-    })
-  );
-}
-
-export async function getSMA(symbol: string, period: MAPeriod = 50, limit = 200): Promise<MAPoint[]> {
+export async function getSMA(symbol: string, period: number = 50): Promise<IndicatorPoint[]> {
   return cached(`sma:${symbol}:${period}`, TTL.indicator, () =>
-    fmpFetch<MAPoint[]>(`/technical-indicator/daily`, {
-      symbol: symbol.toUpperCase(), type: "sma", period: String(period), limit: String(limit),
+    fmpFetch<IndicatorPoint[]>(`/technical-indicators/sma`, {
+      symbol: symbol.toUpperCase(), periodLength: String(period), timeframe: "1day",
     })
   );
 }
 
-export async function getEMA(symbol: string, period: MAPeriod = 20, limit = 200): Promise<MAPoint[]> {
+export async function getEMA(symbol: string, period: number = 20): Promise<IndicatorPoint[]> {
   return cached(`ema:${symbol}:${period}`, TTL.indicator, () =>
-    fmpFetch<MAPoint[]>(`/technical-indicator/daily`, {
-      symbol: symbol.toUpperCase(), type: "ema", period: String(period), limit: String(limit),
+    fmpFetch<IndicatorPoint[]>(`/technical-indicators/ema`, {
+      symbol: symbol.toUpperCase(), periodLength: String(period), timeframe: "1day",
+    })
+  );
+}
+
+export async function getMACD(symbol: string): Promise<IndicatorPoint[]> {
+  return cached(`macd:${symbol}`, TTL.indicator, () =>
+    fmpFetch<IndicatorPoint[]>(`/technical-indicators/macd`, {
+      symbol: symbol.toUpperCase(), timeframe: "1day",
+    })
+  );
+}
+
+export async function getOBV(symbol: string): Promise<IndicatorPoint[]> {
+  return cached(`obv:${symbol}`, TTL.indicator, () =>
+    fmpFetch<IndicatorPoint[]>(`/technical-indicators/obv`, {
+      symbol: symbol.toUpperCase(), timeframe: "1day",
     })
   );
 }
@@ -199,19 +153,10 @@ export async function clearStockCache(symbol: string): Promise<void> {
   const patterns = [
     `quote:${symbol}`, `candles:*:${symbol}*`,
     `income:${symbol}*`, `balance:${symbol}*`, `cashflow:${symbol}*`,
-    `rsi:${symbol}*`, `macd:${symbol}`, `sma:${symbol}*`, `ema:${symbol}*`,
+    `macd:${symbol}`, `obv:${symbol}`, `sma:${symbol}*`, `ema:${symbol}*`,
   ];
   for (const pattern of patterns) {
     const keys = await redis.keys(pattern);
     if (keys.length) await redis.del(...keys);
   }
-}
-export interface OBVPoint { date: string; obv: number }
-
-export async function getOBV(symbol: string, limit = 100): Promise<OBVPoint[]> {
-  return cached(`obv:${symbol}`, TTL.indicator, () =>
-    fmpFetch<OBVPoint[]>(`/technical-indicator/daily`, {
-      symbol: symbol.toUpperCase(), type: "obv", limit: String(limit),
-    })
-  );
 }

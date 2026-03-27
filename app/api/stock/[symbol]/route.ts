@@ -2,7 +2,7 @@
 import {
   getQuote, getDailyCandles,
   getIncomeStatements, getBalanceSheets, getCashFlows,
-  getRSI, getMACD, getSMA, getEMA, getOBV,
+  getSMA, getEMA,
 } from "@/lib/fmp";
 
 export async function GET(
@@ -32,17 +32,15 @@ export async function GET(
         return NextResponse.json({ income, balance, cashflow });
       }
       case "indicators": {
-        const [macd, sma10, sma20, sma50, sma200, ema8, ema21, obv] = await Promise.all([
-          getMACD(symbol, 200),
-          getSMA(symbol, 10, 200),
-          getSMA(symbol, 20, 200),
-          getSMA(symbol, 50, 200),
-          getSMA(symbol, 200, 200),
-          getEMA(symbol, 8, 200),
-          getEMA(symbol, 21, 200),
-          getOBV(symbol, 200),
+        const [sma10, sma20, sma50, sma200, ema8, ema21] = await Promise.all([
+          getSMA(symbol, 10),
+          getSMA(symbol, 20),
+          getSMA(symbol, 50),
+          getSMA(symbol, 200),
+          getEMA(symbol, 8),
+          getEMA(symbol, 21),
         ]);
-        return NextResponse.json({ macd, sma10, sma20, sma50, sma200, ema8, ema21, obv });
+        return NextResponse.json({ sma10, sma20, sma50, sma200, ema8, ema21 });
       }
       default:
         return NextResponse.json({ error: "Invalid tab" }, { status: 400 });

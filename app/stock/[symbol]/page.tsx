@@ -28,18 +28,9 @@ export default function StockPage({ params }) {
 
   const chartRef = useRef(null);
   const maSeriesRef = useRef({});
-  const volumeSeriesRef = useRef(null);
-  const obvSeriesRef = useRef(null);
-  const macdSeriesRef = useRef(null);
-  const signalSeriesRef = useRef(null);
-  const histSeriesRef = useRef(null);
-  const chartInstanceRef = useRef(null);
   const volumeChartRef = useRef(null);
-  const obvChartRef = useRef(null);
-  const macdChartRef = useRef(null);
+  const chartInstanceRef = useRef(null);
   const volumeContainerRef = useRef(null);
-  const obvContainerRef = useRef(null);
-  const macdContainerRef = useRef(null);
 
   useEffect(() => {
     Promise.all([
@@ -59,13 +50,10 @@ export default function StockPage({ params }) {
     import("lightweight-charts").then((lc) => {
       const w = chartRef.current.parentElement?.clientWidth || 800;
 
-      // 清除舊圖
-      [chartInstanceRef, volumeChartRef, obvChartRef, macdChartRef].forEach(r => {
-        if (r.current) { try { r.current.remove(); } catch {} r.current = null; }
-      });
-      [chartRef, volumeContainerRef, obvContainerRef, macdContainerRef].forEach(r => {
-        if (r.current) r.current.innerHTML = "";
-      });
+      if (chartInstanceRef.current) { try { chartInstanceRef.current.remove(); } catch {} chartInstanceRef.current = null; }
+      if (volumeChartRef.current) { try { volumeChartRef.current.remove(); } catch {} volumeChartRef.current = null; }
+      if (chartRef.current) chartRef.current.innerHTML = "";
+      if (volumeContainerRef.current) volumeContainerRef.current.innerHTML = "";
 
       const chartOpts = (h) => ({
         layout: { background: { type: lc.ColorType.Solid, color: "#0f172a" }, textColor: "#94a3b8" },
@@ -76,10 +64,10 @@ export default function StockPage({ params }) {
       });
 
       const formatted = [...candles].reverse().map(c => ({
-        time: c.date, open: c.open, high: c.high, low: c.low, close: c.close,
+        time: c.date.slice(0, 10),
+        open: c.open, high: c.high, low: c.low, close: c.close,
       }));
 
-      // K線主圖
       const mainChart = lc.createChart(chartRef.current, chartOpts(420));
       chartInstanceRef.current = mainChart;
       const candleSeries = mainChart.addSeries(lc.CandlestickSeries, {
@@ -89,7 +77,6 @@ export default function StockPage({ params }) {
       });
       candleSeries.setData(formatted);
 
-      // MA 均線
       const maDataMap = {
         sma10: indicators.sma10, sma20: indicators.sma20,
         sma50: indicators.sma50, sma200: indicators.sma200,
@@ -100,7 +87,7 @@ export default function StockPage({ params }) {
         const fieldKey = key.startsWith("sma") ? "sma" : "ema";
         const data = [...raw].reverse()
           .filter(p => p[fieldKey] != null)
-          .map(p => ({ time: p.date, value: p[fieldKey] }));
+          .map(p => ({ time: p.date.slice(0, 10), value: p[fieldKey] }));
         const series = mainChart.addSeries(lc.LineSeries, {
           color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
           visible: activeMA[key],
@@ -111,7 +98,6 @@ export default function StockPage({ params }) {
 
       mainChart.timeScale().fitContent();
 
-      // 成交量圖
       const volChart = lc.createChart(volumeContainerRef.current, chartOpts(120));
       volumeChartRef.current = volChart;
       const volSeries = volChart.addSeries(lc.HistogramSeries, {
@@ -119,62 +105,21 @@ export default function StockPage({ params }) {
         priceScaleId: "right",
       });
       volSeries.setData([...candles].reverse().map(c => ({
-        time: c.date,
+        time: c.date.slice(0, 10),
         value: c.volume,
         color: c.close >= c.open ? "#22c55e55" : "#ef444455",
       })));
       volChart.timeScale().fitContent();
 
-      // OBV 圖
-      const obvChart = lc.createChart(obvContainerRef.current, chartOpts(120));
-      obvChartRef.current = obvChart;
-      const obvSeries = obvChart.addSeries(lc.LineSeries, {
-        color: "#3b82f6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (range) volChart.timeScale().setVisibleLogicalRange(range);
       });
-      const obvData = [...(indicators.obv ?? [])].reverse()
-        .filter(p => p.obv != null)
-        .map(p => ({ time: p.date, value: p.obv }));
-      obvSeries.setData(obvData);
-      obvChart.timeScale().fitContent();
-
-      // MACD 圖
-      const macdChart = lc.createChart(macdContainerRef.current, chartOpts(150));
-      macdChartRef.current = macdChart;
-      const macdRaw = [...(indicators.macd ?? [])].reverse();
-
-      const histSeries = macdChart.addSeries(lc.HistogramSeries, {
-        priceScaleId: "right", priceLineVisible: false,
-      });
-      histSeries.setData(macdRaw.filter(p => p.histogram != null).map(p => ({
-        time: p.date, value: p.histogram,
-        color: p.histogram >= 0 ? "#22c55e" : "#ef4444",
-      })));
-
-      const macdLine = macdChart.addSeries(lc.LineSeries, {
-        color: "#3b82f6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
-      });
-      macdLine.setData(macdRaw.filter(p => p.macd != null).map(p => ({ time: p.date, value: p.macd })));
-
-      const signalLine = macdChart.addSeries(lc.LineSeries, {
-        color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
-      });
-      signalLine.setData(macdRaw.filter(p => p.signal != null).map(p => ({ time: p.date, value: p.signal })));
-
-      macdChart.timeScale().fitContent();
-
-      // 同步時間軸
-      [volChart, obvChart, macdChart].forEach(c => {
-        mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-          if (range) c.timeScale().setVisibleLogicalRange(range);
-        });
-        c.timeScale().subscribeVisibleLogicalRangeChange(range => {
-          if (range) mainChart.timeScale().setVisibleLogicalRange(range);
-        });
+      volChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (range) mainChart.timeScale().setVisibleLogicalRange(range);
       });
     });
   }, [candles, indicators]);
 
-  // MA 開關
   function toggleMA(key) {
     const next = !activeMA[key];
     setActiveMA(prev => ({ ...prev, [key]: next }));
@@ -212,7 +157,6 @@ export default function StockPage({ params }) {
         <div style={{ textAlign: "center", padding: 80, color: "#64748b", fontSize: 18 }}>載入中...</div>
       ) : quote ? (
         <>
-          {/* 報價區 */}
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>{symbol} · NASDAQ</div>
             <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{quote.name}</div>
@@ -232,35 +176,6 @@ export default function StockPage({ params }) {
             </div>
           </div>
 
-          {/* MA 開關 */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-            {MA_CONFIG.map(({ key, label, color }) => (
-              <button key={key} onClick={() => toggleMA(key)}
-                style={{ background: activeMA[key] ? color + "33" : "#1e293b", border: `1px solid ${activeMA[key] ? color : "#334155"}`, color: activeMA[key] ? color : "#64748b", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* 圖表區 */}
-          <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginBottom: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#94a3b8" }}>K線 + 均線</div>
-            <div ref={chartRef} />
-          </div>
-          <div style={{ background: "#1e293b", borderRadius: "0 0 0 0", padding: "8px 16px", marginBottom: 4 }}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>成交量</div>
-            <div ref={volumeContainerRef} />
-          </div>
-          <div style={{ background: "#1e293b", padding: "8px 16px", marginBottom: 4 }}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>OBV</div>
-            <div ref={obvContainerRef} />
-          </div>
-          <div style={{ background: "#1e293b", borderRadius: "0 0 12px 12px", padding: "8px 16px", marginBottom: 24 }}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>MACD（藍：MACD｜橘：訊號線｜柱：能量）</div>
-            <div ref={macdContainerRef} />
-          </div>
-
-          {/* 數據卡片 */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
             {[
               { label: "今日開盤", value: "$" + quote.open?.toFixed(2) },
@@ -277,7 +192,24 @@ export default function StockPage({ params }) {
             ))}
           </div>
 
-          {/* AI 分析 */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {MA_CONFIG.map(({ key, label, color }) => (
+              <button key={key} onClick={() => toggleMA(key)}
+                style={{ background: activeMA[key] ? color + "33" : "#1e293b", border: `1px solid ${activeMA[key] ? color : "#334155"}`, color: activeMA[key] ? color : "#64748b", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ background: "#1e293b", borderRadius: "12px 12px 0 0", padding: 16, marginBottom: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#94a3b8" }}>K線 + 均線</div>
+            <div ref={chartRef} />
+          </div>
+          <div style={{ background: "#1e293b", borderRadius: "0 0 12px 12px", padding: "8px 16px", marginBottom: 24 }}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>成交量</div>
+            <div ref={volumeContainerRef} />
+          </div>
+
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
