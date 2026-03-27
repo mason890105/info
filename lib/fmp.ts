@@ -65,12 +65,15 @@ export async function getBatchQuotes(symbols: string[]): Promise<Quote[]> {
 }
 
 export interface Candle {
+  symbol: string;
   date: string;
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
+  change: number;
+  changePercent: number;
 }
 
 export async function getDailyCandles(
@@ -82,8 +85,8 @@ export async function getDailyCandles(
   if (from) params.from = from;
   if (to) params.to = to;
   return cached(`candles:daily:${symbol}:${from}:${to}`, TTL.candles, async () => {
-    const data = await fmpFetch<{ historical: Candle[] }>(`/historical-price-eod/full`, params);
-    return data.historical ?? [];
+    const data = await fmpFetch<Candle[]>(`/historical-price-eod/full`, params);
+    return data ?? [];
   });
 }
 
