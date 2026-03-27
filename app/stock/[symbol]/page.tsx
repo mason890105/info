@@ -1,8 +1,10 @@
 ﻿"use client";
 import { use, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 export default function StockPage({ params }) {
   const { symbol: raw } = use(params);
   const symbol = raw.toUpperCase();
+  const router = useRouter();
   const chartRef = useRef(null);
   const [quote, setQuote] = useState(null);
   const [candles, setCandles] = useState([]);
@@ -43,6 +45,9 @@ export default function StockPage({ params }) {
   const up = quote && quote.change >= 0;
   return (
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: "24px" }}>
+      <button onClick={() => router.back()} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}>
+        ← 返回首頁
+      </button>
       {loading ? (
         <div style={{ textAlign: "center", padding: 80, color: "#64748b", fontSize: 18 }}>載入中...</div>
       ) : quote ? (

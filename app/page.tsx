@@ -1,103 +1,62 @@
-"use client";
+﻿"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { use, useEffect, useRef, useState } from "react";
+const POPULAR = [
+  { symbol: "AAPL", name: "蘋果" },
+  { symbol: "MSFT", name: "微軟" },
+  { symbol: "NVDA", name: "輝達" },
+  { symbol: "GOOGL", name: "谷歌" },
+  { symbol: "AMZN", name: "亞馬遜" },
+  { symbol: "META", name: "Meta" },
+  { symbol: "TSLA", name: "特斯拉" },
+  { symbol: "TSM", name: "台積電" },
+];
 
-export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
-  const { symbol: rawSymbol } = use(params);
-  const symbol = rawSymbol.toUpperCase();
+export default function HomePage() {
+  const router = useRouter();
+  const [input, setInput] = useState("");
 
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [quote, setQuote] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`/api/stock/${symbol}?tab=overview`)
-      .then(r => r.json())
-      .then(data => {
-        setQuote(data.quote);
-        setLoading(false);
-
-        if (chartRef.current && data.candles?.length) {
-          import("lightweight-charts").then(({ createChart, ColorType }) => {
-            const chart = createChart(chartRef.current!, {
-              layout: {
-                background: { type: ColorType.Solid, color: "#0f172a" },
-                textColor: "#94a3b8",
-              },
-              grid: {
-                vertLines: { color: "#1e293b" },
-                horzLines: { color: "#1e293b" },
-              },
-              width: chartRef.current!.clientWidth,
-              height: 400,
-            });
-            const series = chart.addCandlestickSeries({
-              upColor: "#22c55e",
-              downColor: "#ef4444",
-              borderUpColor: "#22c55e",
-              borderDownColor: "#ef4444",
-              wickUpColor: "#22c55e",
-              wickDownColor: "#ef4444",
-            });
-            const formatted = [...data.candles]
-              .reverse()
-              .map((c: any) => ({
-                time: c.date,
-                open: c.open,
-                high: c.high,
-                low: c.low,
-                close: c.close,
-              }));
-            series.setData(formatted);
-            chart.timeScale().fitContent();
-          });
-        }
-      });
-  }, [symbol]);
-
-  const up = quote && quote.change >= 0;
+  function go(symbol) {
+    if (!symbol.trim()) return;
+    router.push("/stock/" + symbol.trim().toUpperCase());
+  }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui, sans-serif", padding: "24px" }}>
-      {loading ? (
-        <div style={{ textAlign: "center", padding: 80, color: "#64748b", fontSize: 18 }}>載入中...</div>
-      ) : quote ? (
-        <>
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>{symbol} · NASDAQ</div>
-            <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{quote.name}</div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span style={{ fontSize: 40, fontWeight: 800 }}>${quote.price?.toFixed(2)}</span>
-              <span style={{ fontSize: 18, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
-                {up ? "▲" : "▼"} {Math.abs(quote.change ?? 0).toFixed(2)} ({Math.abs(quote.changePercentage ?? 0).toFixed(2)}%)
-              </span>
-            </div>
-          </div>
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      
+      <div style={{ marginBottom: 12, fontSize: 13, color: "#3b82f6", fontWeight: 600, letterSpacing: 2 }}>美股中文資訊平台</div>
+      <h1 style={{ fontSize: 40, fontWeight: 800, marginBottom: 8, textAlign: "center" }}>即時美股查詢</h1>
+      <p style={{ fontSize: 16, color: "#64748b", marginBottom: 40, textAlign: "center" }}>輸入股票代號，查看即時報價、K線圖與財報數據</p>
 
-          <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#94a3b8" }}>歷史K線</div>
-            <div ref={chartRef} style={{ width: "100%" }} />
-          </div>
+      <div style={{ display: "flex", gap: 8, width: "100%", maxWidth: 480, marginBottom: 48 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && go(input)}
+          placeholder="輸入股票代號，例如 AAPL"
+          style={{ flex: 1, background: "#1e293b", border: "2px solid #334155", borderRadius: 10, padding: "14px 18px", fontSize: 16, color: "#e2e8f0", outline: "none" }}
+        />
+        <button onClick={() => go(input)}
+          style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 10, padding: "14px 24px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
+          查詢
+        </button>
+      </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            {[
-              { label: "今日開盤", value: `$${quote.open?.toFixed(2)}` },
-              { label: "昨日收盤", value: `$${quote.previousClose?.toFixed(2)}` },
-              { label: "今日最高", value: `$${quote.dayHigh?.toFixed(2)}` },
-              { label: "今日最低", value: `$${quote.dayLow?.toFixed(2)}` },
-              { label: "成交量", value: ((quote.volume ?? 0) / 1e6).toFixed(1) + "M" },
-              { label: "市值", value: "$" + ((quote.marketCap ?? 0) / 1e12).toFixed(2) + "T" },
-            ].map(card => (
-              <div key={card.label} style={{ background: "#1e293b", borderRadius: 10, padding: "16px 20px" }}>
-                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>{card.label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{card.value}</div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div style={{ textAlign: "center", padding: 80, color: "#ef4444" }}>找不到股票資料</div>
-      )}
+      <div style={{ width: "100%", maxWidth: 480 }}>
+        <div style={{ fontSize: 13, color: "#475569", marginBottom: 12, fontWeight: 600 }}>熱門股票</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          {POPULAR.map(s => (
+            <button key={s.symbol} onClick={() => go(s.symbol)}
+              style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 10, padding: "12px 8px", cursor: "pointer", textAlign: "center", transition: "background 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+              onMouseLeave={e => e.currentTarget.style.background = "#1e293b"}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 2 }}>{s.symbol}</div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{s.name}</div>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
