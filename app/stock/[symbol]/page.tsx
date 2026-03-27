@@ -45,7 +45,7 @@ export default function StockPage({ params }) {
   const up = quote && quote.change >= 0;
   return (
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: "24px" }}>
-      <button onClick={() => router.back()} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}>
+      <button onClick={() => router.push("/")} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}>
         ← 返回首頁
       </button>
       {loading ? (
