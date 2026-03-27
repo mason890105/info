@@ -14,8 +14,6 @@ export default function FinancialsPage({ params }) {
   const [news, setNews] = useState([]);
   const [period, setPeriod] = useState("quarter");
   const [loading, setLoading] = useState(true);
-  const [aiTranscript, setAiTranscript] = useState("");
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -50,23 +48,6 @@ export default function FinancialsPage({ params }) {
     淨利率: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
   }));
 
-  async function generateTranscript() {
-    setGenerating(true);
-    setAiTranscript("");
-    try {
-      const res = await fetch("/api/ai/transcript", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol }),
-      });
-      const d = await res.json();
-      setAiTranscript(d.transcript || d.error || "生成失敗");
-    } catch {
-      setAiTranscript("生成失敗，請稍後再試");
-    }
-    setGenerating(false);
-  }
-
   const tooltipStyle = { contentStyle: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8 } };
 
   return (
@@ -95,7 +76,6 @@ export default function FinancialsPage({ params }) {
         <div style={{ textAlign: "center", padding: 80, color: "#64748b" }}>載入中...</div>
       ) : (
         <>
-          {/* 營收圖 */}
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>營收 / 毛利 / 淨利（十億美元）</div>
             <ResponsiveContainer width="100%" height={300}>
@@ -112,7 +92,6 @@ export default function FinancialsPage({ params }) {
             </ResponsiveContainer>
           </div>
 
-          {/* EPS 圖 */}
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>每股盈餘（EPS）</div>
             <ResponsiveContainer width="100%" height={220}>
@@ -126,7 +105,6 @@ export default function FinancialsPage({ params }) {
             </ResponsiveContainer>
           </div>
 
-          {/* 關鍵指標趨勢 */}
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#94a3b8" }}>關鍵指標趨勢</div>
             <div style={{ fontSize: 12, color: "#475569", marginBottom: 16 }}>毛利率 · 營業利益率 · 淨利率（%）</div>
@@ -144,7 +122,6 @@ export default function FinancialsPage({ params }) {
             </ResponsiveContainer>
           </div>
 
-          {/* 財報數據表 */}
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>財報數據表</div>
             <div style={{ overflowX: "auto" }}>
@@ -173,26 +150,6 @@ export default function FinancialsPage({ params }) {
             </div>
           </div>
 
-          {/* AI 模擬法說會 */}
-          <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>🎙️ AI 模擬法說會重點</div>
-                <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>根據財報數據，以 CEO/CFO 口吻生成法說會重點摘要</div>
-              </div>
-              <button onClick={generateTranscript} disabled={generating}
-                style={{ background: generating ? "#334155" : "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: generating ? "not-allowed" : "pointer" }}>
-                {generating ? "生成中..." : "生成法說會"}
-              </button>
-            </div>
-            {aiTranscript && (
-              <div style={{ fontSize: 14, lineHeight: 1.8, color: "#cbd5e1", whiteSpace: "pre-wrap", borderTop: "1px solid #334155", paddingTop: 16 }}>
-                {aiTranscript}
-              </div>
-            )}
-          </div>
-
-          {/* 最新新聞 */}
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 20 }}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>📰 最新相關新聞</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
