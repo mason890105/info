@@ -1,0 +1,364 @@
+﻿
+
+=== app\page.tsx ===
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+const POPULAR = [
+  { symbol: "AAPL", name: "蘋果" },
+  { symbol: "MSFT", name: "微軟" },
+  { symbol: "NVDA", name: "輝達" },
+  { symbol: "GOOGL", name: "谷歌" },
+  { symbol: "AMZN", name: "亞馬遜" },
+  { symbol: "META", name: "Meta" },
+  { symbol: "TSLA", name: "特斯拉" },
+  { symbol: "TSM", name: "台積電" },
+];
+
+export default function HomePage() {
+  const router = useRouter();
+  const [input, setInput] = useState("");
+
+  function go(symbol) {
+    if (!symbol.trim()) return;
+    router.push("/stock/" + symbol.trim().toUpperCase());
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      
+      <div style={{ marginBottom: 12, fontSize: 13, color: "#3b82f6", fontWeight: 600, letterSpacing: 2 }}>美股中文資訊平台</div>
+      <h1 style={{ fontSize: 40, fontWeight: 800, marginBottom: 8, textAlign: "center" }}>即時美股查詢</h1>
+      <p style={{ fontSize: 16, color: "#64748b", marginBottom: 40, textAlign: "center" }}>輸入股票代號，查看即時報價、K線圖與財報數據</p>
+
+      <div style={{ display: "flex", gap: 8, width: "100%", maxWidth: 480, marginBottom: 48 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && go(input)}
+          placeholder="輸入股票代號，例如 AAPL"
+          style={{ flex: 1, background: "#1e293b", border: "2px solid #334155", borderRadius: 10, padding: "14px 18px", fontSize: 16, color: "#e2e8f0", outline: "none" }}
+        />
+        <button onClick={() => go(input)}
+          style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 10, padding: "14px 24px", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
+          查詢
+        </button>
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 480 }}>
+        <div style={{ fontSize: 13, color: "#475569", marginBottom: 12, fontWeight: 600 }}>熱門股票</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          {POPULAR.map(s => (
+            <button key={s.symbol} onClick={() => go(s.symbol)}
+              style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 10, padding: "12px 8px", cursor: "pointer", textAlign: "center", transition: "background 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+              onMouseLeave={e => e.currentTarget.style.background = "#1e293b"}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 2 }}>{s.symbol}</div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{s.name}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+=== app\layout.tsx ===
+import type { Metadata } from "next";
+export const metadata: Metadata = {
+  title: "美股小徒弟",
+  description: "即時美股查詢、K線圖、財報分析",
+};
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="zh-TW">
+      <body style={{ margin: 0, padding: 0 }}>{children}</body>
+    </html>
+  );
+}
+
+
+=== app\api\ai\route.ts ===
+import { NextRequest, NextResponse } from "next/server";
+import { getIncomeStatements, getBalanceSheets } from "@/lib/fmp";
+
+export async function POST(req: NextRequest) {
+  try {
+    const { symbol } = await req.json();
+    if (!symbol) return NextResponse.json({ error: "需要股票代號" }, { status: 400 });
+
+    const [income, balance] = await Promise.all([
+      getIncomeStatements(symbol, "quarter", 4),
+      getBalanceSheets(symbol, "quarter", 4),
+    ]);
+
+    const prompt = `你是一位專業的美股財務分析師，請用繁體中文分析以下 ${symbol} 的財報數據，給出簡潔易懂的投資者摘要。
+
+損益表（最近4季）：
+${income.slice(0, 4).map(q => {
+  const grossMargin = q.grossProfitRatio 
+    ? (q.grossProfitRatio * 100).toFixed(1) + "%"
+    : q.revenue > 0 
+      ? ((q.grossProfit / q.revenue) * 100).toFixed(1) + "%"
+      : "N/A";
+  return `${q.date}: 營收 $${(q.revenue/1e9).toFixed(2)}B, EPS $${q.eps}, 毛利率 ${grossMargin}`;
+}).join("\n")}
+
+資產負債表（最近1季）：
+總資產: $${(balance[0]?.totalAssets/1e9).toFixed(2)}B
+總負債: $${(balance[0]?.totalLiabilities/1e9).toFixed(2)}B
+現金: $${(balance[0]?.cashAndCashEquivalents/1e9).toFixed(2)}B
+總債務: $${(balance[0]?.totalDebt/1e9).toFixed(2)}B
+
+請提供：
+1. 營收趨勢分析（2-3句）
+2. 獲利能力評估（2-3句）
+3. 財務健康度（2-3句）
+4. 投資者重點關注事項（2-3點）
+
+語言要求：繁體中文，專業但易懂，避免過多術語。`;
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY!,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || "無法取得分析結果";
+    return NextResponse.json({ analysis: text });
+  } catch (err) {
+    console.error("[AI]", err);
+    return NextResponse.json({ error: "AI 分析失敗" }, { status: 500 });
+  }
+}
+
+
+=== app\api\stock\[symbol]\route.ts ===
+
+
+=== app\stock\[symbol]\page.tsx ===
+
+
+=== app\stock\[symbol]\financials\page.tsx ===
+
+
+=== lib\fmp.ts ===
+import Redis from "ioredis";
+
+const FMP_KEY = process.env.FMP_API_KEY!;
+const FMP_BASE = "https://financialmodelingprep.com/stable";
+
+const globalForRedis = global as unknown as { redis?: Redis };
+const redis =
+  globalForRedis.redis ??
+  new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+if (process.env.NODE_ENV !== "production") globalForRedis.redis = redis;
+
+const TTL = {
+  quote: 15,
+  candles: 60 * 60,
+  financials: 60 * 60 * 24,
+  indicator: 60 * 5,
+};
+
+async function cached<T>(key: string, ttl: number, fetcher: () => Promise<T>): Promise<T> {
+  const hit = await redis.get(key);
+  if (hit) return JSON.parse(hit) as T;
+  const data = await fetcher();
+  await redis.setex(key, ttl, JSON.stringify(data));
+  return data;
+}
+
+async function fmpFetch<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+  const url = new URL(`${FMP_BASE}${path}`);
+  url.searchParams.set("apikey", FMP_KEY);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`FMP Error ${res.status}: ${path} - ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface Quote {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercentage: number;
+  dayHigh: number;
+  dayLow: number;
+  volume: number;
+  marketCap: number;
+  open: number;
+  previousClose: number;
+}
+
+export async function getQuote(symbol: string): Promise<Quote> {
+  return cached(`quote:${symbol}`, TTL.quote, async () => {
+    const data = await fmpFetch<Quote[]>(`/quote`, { symbol: symbol.toUpperCase() });
+    return data[0];
+  });
+}
+
+export async function getBatchQuotes(symbols: string[]): Promise<Quote[]> {
+  const key = `quote:batch:${symbols.sort().join(",")}`;
+  return cached(key, TTL.quote, () =>
+    fmpFetch<Quote[]>(`/quote`, { symbol: symbols.map(s => s.toUpperCase()).join(",") })
+  );
+}
+
+export interface Candle {
+  symbol: string;
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  change: number;
+  changePercent: number;
+}
+
+export async function getDailyCandles(
+  symbol: string,
+  from?: string,
+  to?: string
+): Promise<Candle[]> {
+  const params: Record<string, string> = { symbol: symbol.toUpperCase() };
+  if (from) params.from = from;
+  if (to) params.to = to;
+  return cached(`candles:daily:${symbol}:${from}:${to}`, TTL.candles, async () => {
+    const data = await fmpFetch<Candle[]>(`/historical-price-eod/full`, params);
+    return data ?? [];
+  });
+}
+
+export interface IncomeStatement {
+  date: string;
+  symbol: string;
+  revenue: number;
+  grossProfit: number;
+  grossProfitRatio: number;
+  operatingIncome: number;
+  netIncome: number;
+  eps: number;
+  ebitda: number;
+}
+
+export interface BalanceSheet {
+  date: string;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalStockholdersEquity: number;
+  cashAndCashEquivalents: number;
+  totalDebt: number;
+}
+
+export interface CashFlowStatement {
+  date: string;
+  operatingCashFlow: number;
+  capitalExpenditure: number;
+  freeCashFlow: number;
+  dividendsPaid: number;
+}
+
+type Period = "annual" | "quarter";
+
+export async function getIncomeStatements(
+  symbol: string,
+  period: Period = "quarter",
+  limit = 8
+): Promise<IncomeStatement[]> {
+  return cached(`income:${symbol}:${period}:${limit}`, TTL.financials, () =>
+    fmpFetch<IncomeStatement[]>(`/income-statement`, {
+      symbol: symbol.toUpperCase(), period, limit: String(limit),
+    })
+  );
+}
+
+export async function getBalanceSheets(
+  symbol: string,
+  period: Period = "quarter",
+  limit = 8
+): Promise<BalanceSheet[]> {
+  return cached(`balance:${symbol}:${period}:${limit}`, TTL.financials, () =>
+    fmpFetch<BalanceSheet[]>(`/balance-sheet-statement`, {
+      symbol: symbol.toUpperCase(), period, limit: String(limit),
+    })
+  );
+}
+
+export async function getCashFlows(
+  symbol: string,
+  period: Period = "quarter",
+  limit = 8
+): Promise<CashFlowStatement[]> {
+  return cached(`cashflow:${symbol}:${period}:${limit}`, TTL.financials, () =>
+    fmpFetch<CashFlowStatement[]>(`/cash-flow-statement`, {
+      symbol: symbol.toUpperCase(), period, limit: String(limit),
+    })
+  );
+}
+
+export interface RSIPoint { date: string; rsi: number }
+export interface MACDPoint { date: string; macd: number; signal: number; histogram: number }
+export interface MAPoint { date: string; sma?: number; ema?: number }
+
+type MAPeriod = 10 | 20 | 50 | 100 | 200;
+
+export async function getRSI(symbol: string, period = 14, limit = 100): Promise<RSIPoint[]> {
+  return cached(`rsi:${symbol}:${period}`, TTL.indicator, () =>
+    fmpFetch<RSIPoint[]>(`/technical-indicator/daily`, {
+      symbol: symbol.toUpperCase(), type: "rsi", period: String(period), limit: String(limit),
+    })
+  );
+}
+
+export async function getMACD(symbol: string, limit = 100): Promise<MACDPoint[]> {
+  return cached(`macd:${symbol}`, TTL.indicator, () =>
+    fmpFetch<MACDPoint[]>(`/technical-indicator/daily`, {
+      symbol: symbol.toUpperCase(), type: "macd", limit: String(limit),
+    })
+  );
+}
+
+export async function getSMA(symbol: string, period: MAPeriod = 50, limit = 200): Promise<MAPoint[]> {
+  return cached(`sma:${symbol}:${period}`, TTL.indicator, () =>
+    fmpFetch<MAPoint[]>(`/technical-indicator/daily`, {
+      symbol: symbol.toUpperCase(), type: "sma", period: String(period), limit: String(limit),
+    })
+  );
+}
+
+export async function getEMA(symbol: string, period: MAPeriod = 20, limit = 200): Promise<MAPoint[]> {
+  return cached(`ema:${symbol}:${period}`, TTL.indicator, () =>
+    fmpFetch<MAPoint[]>(`/technical-indicator/daily`, {
+      symbol: symbol.toUpperCase(), type: "ema", period: String(period), limit: String(limit),
+    })
+  );
+}
+
+export async function clearStockCache(symbol: string): Promise<void> {
+  const patterns = [
+    `quote:${symbol}`, `candles:*:${symbol}*`,
+    `income:${symbol}*`, `balance:${symbol}*`, `cashflow:${symbol}*`,
+    `rsi:${symbol}*`, `macd:${symbol}`, `sma:${symbol}*`, `ema:${symbol}*`,
+  ];
+  for (const pattern of patterns) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+}

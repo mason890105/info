@@ -1,6 +1,7 @@
 ﻿"use client";
 import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
 export default function StockPage({ params }) {
   const { symbol: raw } = use(params);
   const symbol = raw.toUpperCase();
@@ -11,6 +12,7 @@ export default function StockPage({ params }) {
   const [loading, setLoading] = useState(true);
   const [analysis, setAnalysis] = useState("");
   const [analysing, setAnalysing] = useState(false);
+
   useEffect(() => {
     fetch("/api/stock/" + symbol + "?tab=overview")
       .then(r => r.json())
@@ -20,6 +22,7 @@ export default function StockPage({ params }) {
         setLoading(false);
       });
   }, [symbol]);
+
   useEffect(() => {
     if (!chartRef.current || candles.length === 0) return;
     const container = chartRef.current;
@@ -44,6 +47,7 @@ export default function StockPage({ params }) {
       chart.timeScale().fitContent();
     });
   }, [candles]);
+
   async function getAnalysis() {
     setAnalysing(true);
     setAnalysis("");
@@ -60,7 +64,9 @@ export default function StockPage({ params }) {
     }
     setAnalysing(false);
   }
+
   const up = quote && quote.change >= 0;
+
   return (
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: "24px" }}>
       <button onClick={() => router.push("/")} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}>
@@ -80,10 +86,16 @@ export default function StockPage({ params }) {
                   {up ? "+" : ""}{quote.change?.toFixed(2)} ({quote.changePercentage?.toFixed(2)}%)
                 </span>
               </div>
-              <button onClick={() => router.push("/stock/" + symbol + "/financials")}
-                style={{ background: "#1e293b", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                📊 查看財報
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => router.push("/stock/" + symbol + "/financials")}
+                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  📊 查看財報
+                </button>
+                <button onClick={() => router.push("/stock/" + symbol + "/indicators")}
+                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  📈 技術指標
+                </button>
+              </div>
             </div>
           </div>
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginBottom: 24 }}>
