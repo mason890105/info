@@ -1,65 +1,103 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { use, useEffect, useRef, useState } from "react";
+
+export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
+  const { symbol: rawSymbol } = use(params);
+  const symbol = rawSymbol.toUpperCase();
+
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [quote, setQuote] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/stock/${symbol}?tab=overview`)
+      .then(r => r.json())
+      .then(data => {
+        setQuote(data.quote);
+        setLoading(false);
+
+        if (chartRef.current && data.candles?.length) {
+          import("lightweight-charts").then(({ createChart, ColorType }) => {
+            const chart = createChart(chartRef.current!, {
+              layout: {
+                background: { type: ColorType.Solid, color: "#0f172a" },
+                textColor: "#94a3b8",
+              },
+              grid: {
+                vertLines: { color: "#1e293b" },
+                horzLines: { color: "#1e293b" },
+              },
+              width: chartRef.current!.clientWidth,
+              height: 400,
+            });
+            const series = chart.addCandlestickSeries({
+              upColor: "#22c55e",
+              downColor: "#ef4444",
+              borderUpColor: "#22c55e",
+              borderDownColor: "#ef4444",
+              wickUpColor: "#22c55e",
+              wickDownColor: "#ef4444",
+            });
+            const formatted = [...data.candles]
+              .reverse()
+              .map((c: any) => ({
+                time: c.date,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+              }));
+            series.setData(formatted);
+            chart.timeScale().fitContent();
+          });
+        }
+      });
+  }, [symbol]);
+
+  const up = quote && quote.change >= 0;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui, sans-serif", padding: "24px" }}>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 80, color: "#64748b", fontSize: 18 }}>載入中...</div>
+      ) : quote ? (
+        <>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>{symbol} · NASDAQ</div>
+            <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{quote.name}</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+              <span style={{ fontSize: 40, fontWeight: 800 }}>${quote.price?.toFixed(2)}</span>
+              <span style={{ fontSize: 18, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
+                {up ? "▲" : "▼"} {Math.abs(quote.change ?? 0).toFixed(2)} ({Math.abs(quote.changePercentage ?? 0).toFixed(2)}%)
+              </span>
+            </div>
+          </div>
+
+          <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#94a3b8" }}>歷史K線</div>
+            <div ref={chartRef} style={{ width: "100%" }} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            {[
+              { label: "今日開盤", value: `$${quote.open?.toFixed(2)}` },
+              { label: "昨日收盤", value: `$${quote.previousClose?.toFixed(2)}` },
+              { label: "今日最高", value: `$${quote.dayHigh?.toFixed(2)}` },
+              { label: "今日最低", value: `$${quote.dayLow?.toFixed(2)}` },
+              { label: "成交量", value: ((quote.volume ?? 0) / 1e6).toFixed(1) + "M" },
+              { label: "市值", value: "$" + ((quote.marketCap ?? 0) / 1e12).toFixed(2) + "T" },
+            ].map(card => (
+              <div key={card.label} style={{ background: "#1e293b", borderRadius: 10, padding: "16px 20px" }}>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>{card.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{card.value}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ textAlign: "center", padding: 80, color: "#ef4444" }}>找不到股票資料</div>
+      )}
     </div>
   );
 }
