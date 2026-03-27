@@ -5,6 +5,9 @@ import {
   getSMA, getEMA,
 } from "@/lib/fmp";
 
+const FMP_KEY = process.env.FMP_API_KEY!;
+const FMP_BASE = "https://financialmodelingprep.com/stable";
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
@@ -41,6 +44,12 @@ export async function GET(
           getEMA(symbol, 21),
         ]);
         return NextResponse.json({ sma10, sma20, sma50, sma200, ema8, ema21 });
+      }
+      case "news": {
+        const url = `${FMP_BASE}/news/stock?symbols=${symbol}&limit=8&apikey=${FMP_KEY}`;
+        const res = await fetch(url, { cache: "no-store" });
+        const news = await res.json();
+        return NextResponse.json({ news });
       }
       default:
         return NextResponse.json({ error: "Invalid tab" }, { status: 400 });
