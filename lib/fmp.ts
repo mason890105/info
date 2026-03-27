@@ -206,3 +206,12 @@ export async function clearStockCache(symbol: string): Promise<void> {
     if (keys.length) await redis.del(...keys);
   }
 }
+export interface OBVPoint { date: string; obv: number }
+
+export async function getOBV(symbol: string, limit = 100): Promise<OBVPoint[]> {
+  return cached(`obv:${symbol}`, TTL.indicator, () =>
+    fmpFetch<OBVPoint[]>(`/technical-indicator/daily`, {
+      symbol: symbol.toUpperCase(), type: "obv", limit: String(limit),
+    })
+  );
+}

@@ -1,14 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import {
-  getQuote,
-  getDailyCandles,
-  getIncomeStatements,
-  getBalanceSheets,
-  getCashFlows,
-  getRSI,
-  getMACD,
-  getSMA,
-  getEMA,
+  getQuote, getDailyCandles,
+  getIncomeStatements, getBalanceSheets, getCashFlows,
+  getRSI, getMACD, getSMA, getEMA, getOBV,
 } from "@/lib/fmp";
 
 export async function GET(
@@ -29,7 +23,6 @@ export async function GET(
         ]);
         return NextResponse.json({ quote, candles });
       }
-
       case "financials": {
         const [income, balance, cashflow] = await Promise.all([
           getIncomeStatements(symbol, period),
@@ -38,26 +31,24 @@ export async function GET(
         ]);
         return NextResponse.json({ income, balance, cashflow });
       }
-
       case "indicators": {
-        const [rsi, macd, sma50, sma200, ema20] = await Promise.all([
-          getRSI(symbol),
-          getMACD(symbol),
-          getSMA(symbol, 50),
-          getSMA(symbol, 200),
-          getEMA(symbol, 20),
+        const [macd, sma10, sma20, sma50, sma200, ema8, ema21, obv] = await Promise.all([
+          getMACD(symbol, 200),
+          getSMA(symbol, 10, 200),
+          getSMA(symbol, 20, 200),
+          getSMA(symbol, 50, 200),
+          getSMA(symbol, 200, 200),
+          getEMA(symbol, 8, 200),
+          getEMA(symbol, 21, 200),
+          getOBV(symbol, 200),
         ]);
-        return NextResponse.json({ rsi, macd, sma50, sma200, ema20 });
+        return NextResponse.json({ macd, sma10, sma20, sma50, sma200, ema8, ema21, obv });
       }
-
       default:
         return NextResponse.json({ error: "Invalid tab" }, { status: 400 });
     }
   } catch (err) {
     console.error(`[FMP] ${symbol} ${tab}`, err);
-    return NextResponse.json(
-      { error: "資料取得失敗，請稍後再試" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "資料取得失敗，請稍後再試" }, { status: 500 });
   }
 }
