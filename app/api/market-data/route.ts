@@ -15,8 +15,9 @@ async function fmp<T>(path: string, params: Record<string, string> = {}): Promis
 export async function GET() {
   try {
     const [quotes, spyRsi, spyMfi, fng] = await Promise.allSettled([
+      // ^ 在 URL 需編碼成 %5E
       fmp<any[]>("/quote", {
-        symbol: "^VIX,^VVIX,^SKEW,GCUSD,CLUSD,DX-Y.NYB,^TNX",
+        symbol: "%5EVIX,%5EVVIX,%5ESKEW,GCUSD,CLUSD,DX-Y.NYB,%5ETNX",
       }),
       fmp<any[]>("/technical-indicator/daily", {
         symbol: "SPY", type: "rsi", period: "14", limit: "1",
