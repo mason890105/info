@@ -40,6 +40,7 @@ export interface Quote {
   symbol: string; name: string; price: number; change: number;
   changePercentage: number; dayHigh: number; dayLow: number;
   volume: number; marketCap: number; open: number; previousClose: number;
+  exchange?: string;
 }
 
 export async function getQuote(symbol: string): Promise<Quote> {
@@ -104,20 +105,21 @@ export async function getCashFlows(symbol: string, period: Period = "quarter", l
 
 export interface IndicatorPoint {
   date: string;
-  open?: number;
-  high?: number;
-  low?: number;
-  close?: number;
-  volume?: number;
-  sma?: number;
-  ema?: number;
-  macd?: number;
-  signal?: number;
-  histogram?: number;
+  open?: number; high?: number; low?: number; close?: number; volume?: number;
+  sma?: number; ema?: number; rsi?: number;
+  macd?: number; signal?: number; histogram?: number;
   obv?: number;
 }
 
-export async function getSMA(symbol: string, period: number = 50): Promise<IndicatorPoint[]> {
+export async function getRSI(symbol: string, period = 14): Promise<IndicatorPoint[]> {
+  return cached(`rsi:${symbol}:${period}`, TTL.indicator, () =>
+    fmpFetch<IndicatorPoint[]>(`/technical-indicators/rsi`, {
+      symbol: symbol.toUpperCase(), periodLength: String(period), timeframe: "1day",
+    })
+  );
+}
+
+export async function getSMA(symbol: string, period = 50): Promise<IndicatorPoint[]> {
   return cached(`sma:${symbol}:${period}`, TTL.indicator, () =>
     fmpFetch<IndicatorPoint[]>(`/technical-indicators/sma`, {
       symbol: symbol.toUpperCase(), periodLength: String(period), timeframe: "1day",
@@ -125,7 +127,7 @@ export async function getSMA(symbol: string, period: number = 50): Promise<Indic
   );
 }
 
-export async function getEMA(symbol: string, period: number = 20): Promise<IndicatorPoint[]> {
+export async function getEMA(symbol: string, period = 20): Promise<IndicatorPoint[]> {
   return cached(`ema:${symbol}:${period}`, TTL.indicator, () =>
     fmpFetch<IndicatorPoint[]>(`/technical-indicators/ema`, {
       symbol: symbol.toUpperCase(), periodLength: String(period), timeframe: "1day",
@@ -153,7 +155,8 @@ export async function clearStockCache(symbol: string): Promise<void> {
   const patterns = [
     `quote:${symbol}`, `candles:*:${symbol}*`,
     `income:${symbol}*`, `balance:${symbol}*`, `cashflow:${symbol}*`,
-    `macd:${symbol}`, `obv:${symbol}`, `sma:${symbol}*`, `ema:${symbol}*`,
+    `rsi:${symbol}*`, `macd:${symbol}`, `obv:${symbol}`,
+    `sma:${symbol}*`, `ema:${symbol}*`,
   ];
   for (const pattern of patterns) {
     const keys = await redis.keys(pattern);
