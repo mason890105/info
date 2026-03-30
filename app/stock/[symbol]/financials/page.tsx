@@ -144,7 +144,6 @@ export default function FinancialsPage() {
   const latestCF      = cashflow[0] ?? {};
   const prevIncome    = income[4]   ?? {};
 
-  // ✅ 毛利率改成自己算
   const grossMargin  = latestIncome.revenue > 0
     ? ((latestIncome.grossProfit / latestIncome.revenue) * 100).toFixed(1) + "%"
     : "N/A";
@@ -166,9 +165,11 @@ export default function FinancialsPage() {
   const revenueGrowth = yoy(latestIncome.revenue, prevIncome.revenue);
   const epsGrowth     = yoy(latestIncome.eps, prevIncome.eps);
 
-  // ✅ P/E 兩個欄位名稱都試
-  const peVal = quote?.pe ?? quote?.priceEarningsRatio;
-  const pe    = peVal ? Number(peVal).toFixed(1) : "N/A";
+  // ✅ TTM P/E：用最近四季 EPS 總和自行計算
+  const ttmEps = income.slice(0, 4).reduce((sum: number, q: any) => sum + (q.eps ?? 0), 0);
+  const pe = (ttmEps > 0 && quote?.price)
+    ? (quote.price / ttmEps).toFixed(1)
+    : "N/A";
 
   const tooltipStyle = { contentStyle: { background: "#1e293b", border: "none", color: "#e2e8f0", fontSize: 12 } };
 
@@ -188,7 +189,7 @@ export default function FinancialsPage() {
 
       {/* 關鍵指標快覽 */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
-        <MetricCard label="本益比 P/E" value={pe} sub="目前估值" />
+        <MetricCard label="本益比 P/E (TTM)" value={pe} sub="近四季EPS計算" />
         <MetricCard label="毛利率" value={grossMargin} sub={`淨利率 ${netMargin}`} color="#22c55e" />
         <MetricCard label="ROE" value={roe} sub="股東權益報酬" color="#3b82f6" />
         <MetricCard label="負債權益比" value={debtToEquity} sub={`流動比率 ${currentRatio}`} color={parseFloat(debtToEquity) > 2 ? "#ef4444" : "#e2e8f0"} />
