@@ -3,28 +3,27 @@ import { NextResponse } from "next/server";
 const FMP_KEY = process.env.FMP_API_KEY!;
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
-async function fmp<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-  const url = new URL(`${FMP_BASE}${path}`);
-  url.searchParams.set("apikey", FMP_KEY);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { next: { revalidate: 60 } });
-  if (!res.ok) throw new Error(`FMP ${res.status}: ${path}`);
+async function fmpQuote(symbols: string): Promise<any[]> {
+  // 直接拼接 URL，避免 searchParams 二次編碼 ^ 符號
+  const url = `${FMP_BASE}/quote?symbol=${symbols}&apikey=${FMP_KEY}`;
+  const res = await fetch(url, { next: { revalidate: 60 } });
+  if (!res.ok) throw new Error(`FMP ${res.status}`);
+  return res.json();
+}
+
+async function fmpIndicator(symbol: string, type: string): Promise<any[]> {
+  const url = `${FMP_BASE}/technical-indicator/daily?symbol=${symbol}&type=${type}&period=14&limit=1&apikey=${FMP_KEY}`;
+  const res = await fetch(url, { next: { revalidate: 300 } });
+  if (!res.ok) throw new Error(`FMP ${res.status}`);
   return res.json();
 }
 
 export async function GET() {
   try {
     const [quotes, spyRsi, spyMfi, fng] = await Promise.allSettled([
-      // ^ 在 URL 需編碼成 %5E
-      fmp<any[]>("/quote", {
-        symbol: "%5EVIX,%5EVVIX,%5ESKEW,GCUSD,CLUSD,DX-Y.NYB,%5ETNX",
-      }),
-      fmp<any[]>("/technical-indicator/daily", {
-        symbol: "SPY", type: "rsi", period: "14", limit: "1",
-      }),
-      fmp<any[]>("/technical-indicator/daily", {
-        symbol: "SPY", type: "mfi", period: "14", limit: "1",
-      }),
+      fmpQuote("^VIX,^VVIX,^SKEW,GCUSD,CLUSD,DX-Y.NYB,^TNX"),
+      fmpIndicator("SPY", "rsi"),
+      fmpIndicator("SPY", "mfi"),
       fetch("https://api.alternative.me/fng/?limit=1").then(r => r.json()),
     ]);
 
