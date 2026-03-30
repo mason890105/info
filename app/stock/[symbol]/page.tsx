@@ -2,6 +2,7 @@
 import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+// ── MA 設定 ───────────────────────────────────────────────
 const MA_CONFIG = [
   { key: "sma10",  label: "MA10",  defaultColor: "#f59e0b" },
   { key: "sma20",  label: "MA20",  defaultColor: "#3b82f6" },
@@ -11,6 +12,37 @@ const MA_CONFIG = [
   { key: "ema21",  label: "EMA21", defaultColor: "#fb7185" },
 ];
 
+// ── localStorage 記憶功能 ────────────────────────────────
+const STORAGE_KEY = "chart-settings-v1";
+
+const DEFAULT_SETTINGS = {
+  activeMA: Object.fromEntries(MA_CONFIG.map(m => [m.key, true])),
+  maColors:  Object.fromEntries(MA_CONFIG.map(m => [m.key, m.defaultColor])),
+  showBB:   false,
+  bbPeriod: 20,
+  bbMult:   2,
+};
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const p = JSON.parse(raw);
+    return {
+      activeMA: { ...DEFAULT_SETTINGS.activeMA, ...p.activeMA },
+      maColors:  { ...DEFAULT_SETTINGS.maColors,  ...p.maColors  },
+      showBB:   p.showBB   ?? DEFAULT_SETTINGS.showBB,
+      bbPeriod: p.bbPeriod ?? DEFAULT_SETTINGS.bbPeriod,
+      bbMult:   p.bbMult   ?? DEFAULT_SETTINGS.bbMult,
+    };
+  } catch { return DEFAULT_SETTINGS; }
+}
+
+function saveSettings(s: typeof DEFAULT_SETTINGS) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+
+// ── 布林通道計算 ─────────────────────────────────────────
 function calcBollinger(candles: any[], period = 20, multiplier = 2) {
   const closes = [...candles].reverse().map(c => c.close);
   const result: { time: string; upper: number; middle: number; lower: number }[] = [];
@@ -19,42 +51,69 @@ function calcBollinger(candles: any[], period = 20, multiplier = 2) {
     const mean = slice.reduce((a, b) => a + b, 0) / period;
     const std = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period);
     result.push({
-      time: [...candles].reverse()[i].date.slice(0, 10),
-      upper: +(mean + multiplier * std).toFixed(4),
+      time:   [...candles].reverse()[i].date.slice(0, 10),
+      upper:  +(mean + multiplier * std).toFixed(4),
       middle: +mean.toFixed(4),
-      lower: +(mean - multiplier * std).toFixed(4),
+      lower:  +(mean - multiplier * std).toFixed(4),
     });
   }
   return result;
 }
 
+// ── 主頁面 ────────────────────────────────────────────────
 export default function StockPage({ params }) {
   const { symbol: raw } = use(params);
   const symbol = raw.toUpperCase();
   const router = useRouter();
 
-  const [quote, setQuote] = useState(null);
-  const [candles, setCandles] = useState([]);
+  const [quote, setQuote]         = useState(null);
+  const [candles, setCandles]     = useState([]);
   const [indicators, setIndicators] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]     = useState(true);
 
-  const [activeMA, setActiveMA] = useState(
-    Object.fromEntries(MA_CONFIG.map(m => [m.key, true]))
-  );
-  const [maColors, setMaColors] = useState(
-    Object.fromEntries(MA_CONFIG.map(m => [m.key, m.defaultColor]))
-  );
-  const [showBB, setShowBB] = useState(false);
-  const [bbPeriod, setBbPeriod] = useState(20);
-  const [bbMult, setBbMult] = useState(2);
+  // 圖表設定（先用預設，client mount 後再從 localStorage 覆蓋）
+  const [activeMA, setActiveMA]   = useState(DEFAULT_SETTINGS.activeMA);
+  const [maColors, setMaColors]   = useState(DEFAULT_SETTINGS.maColors);
+  const [showBB,   setShowBB]     = useState(DEFAULT_SETTINGS.showBB);
+  const [bbPeriod, setBbPeriod]   = useState(DEFAULT_SETTINGS.bbPeriod);
+  const [bbMult,   setBbMult]     = useState(DEFAULT_SETTINGS.bbMult);
+  const [saved,    setSaved]      = useState(false);
 
-  const chartRef = useRef(null);
-  const maSeriesRef = useRef({});
-  const bbSeriesRef = useRef<any[]>([]);
-  const volumeChartRef = useRef(null);
-  const chartInstanceRef = useRef(null);
-  const volumeContainerRef = useRef(null);
+  // ── Client mount：從 localStorage 讀取設定 ───────────
+  useEffect(() => {
+    const s = loadSettings();
+    setActiveMA(s.activeMA);
+    setMaColors(s.maColors);
+    setShowBB(s.showBB);
+    setBbPeriod(s.bbPeriod);
+    setBbMult(s.bbMult);
+  }, []);
 
+  // ── 儲存設定 ─────────────────────────────────────────
+  function handleSave() {
+    saveSettings({ activeMA, maColors, showBB, bbPeriod, bbMult });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  // ── 重置設定 ─────────────────────────────────────────
+  function handleReset() {
+    setActiveMA(DEFAULT_SETTINGS.activeMA);
+    setMaColors(DEFAULT_SETTINGS.maColors);
+    setShowBB(DEFAULT_SETTINGS.showBB);
+    setBbPeriod(DEFAULT_SETTINGS.bbPeriod);
+    setBbMult(DEFAULT_SETTINGS.bbMult);
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  const chartRef            = useRef(null);
+  const maSeriesRef         = useRef({});
+  const bbSeriesRef         = useRef<any[]>([]);
+  const volumeChartRef      = useRef(null);
+  const chartInstanceRef    = useRef(null);
+  const volumeContainerRef  = useRef(null);
+
+  // ── 抓股票資料 ───────────────────────────────────────
   useEffect(() => {
     Promise.all([
       fetch("/api/stock/" + symbol + "?tab=overview").then(r => r.json()),
@@ -67,6 +126,7 @@ export default function StockPage({ params }) {
     });
   }, [symbol]);
 
+  // ── 繪製圖表 ─────────────────────────────────────────
   useEffect(() => {
     if (!chartRef.current || candles.length === 0 || !indicators) return;
 
@@ -74,14 +134,14 @@ export default function StockPage({ params }) {
       const w = chartRef.current.parentElement?.clientWidth || 800;
 
       if (chartInstanceRef.current) { try { chartInstanceRef.current.remove(); } catch {} chartInstanceRef.current = null; }
-      if (volumeChartRef.current) { try { volumeChartRef.current.remove(); } catch {} volumeChartRef.current = null; }
-      if (chartRef.current) chartRef.current.innerHTML = "";
+      if (volumeChartRef.current)   { try { volumeChartRef.current.remove();   } catch {} volumeChartRef.current = null; }
+      if (chartRef.current)         chartRef.current.innerHTML = "";
       if (volumeContainerRef.current) volumeContainerRef.current.innerHTML = "";
 
       maSeriesRef.current = {};
       bbSeriesRef.current = [];
 
-      const chartOpts = (h) => ({
+      const chartOpts = (h: number) => ({
         layout: { background: { type: lc.ColorType.Solid, color: "#0f172a" }, textColor: "#94a3b8" },
         grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
         width: w, height: h,
@@ -105,10 +165,10 @@ export default function StockPage({ params }) {
       candleSeries.setData(formatted);
 
       // MA 均線
-      const maDataMap = {
+      const maDataMap: Record<string, any[]> = {
         sma10: indicators.sma10, sma20: indicators.sma20,
         sma50: indicators.sma50, sma200: indicators.sma200,
-        ema8: indicators.ema8, ema21: indicators.ema21,
+        ema8:  indicators.ema8,  ema21:  indicators.ema21,
       };
       MA_CONFIG.forEach(({ key }) => {
         const raw = maDataMap[key] ?? [];
@@ -129,9 +189,9 @@ export default function StockPage({ params }) {
       if (showBB && candles.length > bbPeriod) {
         const bbData = calcBollinger(candles, bbPeriod, bbMult);
         const bbStyle = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false };
-        const upper = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
-        const middle = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa", lineWidth: 1 });
-        const lower = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
+        const upper  = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
+        const middle = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa" });
+        const lower  = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
         upper.setData(bbData.map(d => ({ time: d.time, value: d.upper })));
         middle.setData(bbData.map(d => ({ time: d.time, value: d.middle })));
         lower.setData(bbData.map(d => ({ time: d.time, value: d.lower })));
@@ -161,14 +221,14 @@ export default function StockPage({ params }) {
     });
   }, [candles, indicators, showBB, bbPeriod, bbMult, maColors]);
 
-  function toggleMA(key) {
+  function toggleMA(key: string) {
     const next = !activeMA[key];
     setActiveMA(prev => ({ ...prev, [key]: next }));
     const series = maSeriesRef.current[key];
     if (series) series.applyOptions({ visible: next });
   }
 
-  function changeMAColor(key, color) {
+  function changeMAColor(key: string, color: string) {
     setMaColors(prev => ({ ...prev, [key]: color }));
   }
 
@@ -185,6 +245,7 @@ export default function StockPage({ params }) {
         <div style={{ textAlign: "center", padding: 80, color: "#64748b", fontSize: 18 }}>載入中...</div>
       ) : quote ? (
         <>
+          {/* 報價區塊 */}
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>{symbol} · NASDAQ</div>
             <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{quote.name}</div>
@@ -202,14 +263,15 @@ export default function StockPage({ params }) {
             </div>
           </div>
 
+          {/* 數據卡片 */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
             {[
               { label: "今日開盤", value: "$" + quote.open?.toFixed(2) },
               { label: "昨日收盤", value: "$" + quote.previousClose?.toFixed(2) },
               { label: "今日最高", value: "$" + quote.dayHigh?.toFixed(2) },
               { label: "今日最低", value: "$" + quote.dayLow?.toFixed(2) },
-              { label: "成交量", value: ((quote.volume ?? 0) / 1e6).toFixed(1) + "M" },
-              { label: "市值", value: "$" + ((quote.marketCap ?? 0) / 1e12).toFixed(2) + "T" },
+              { label: "成交量",   value: ((quote.volume ?? 0) / 1e6).toFixed(1) + "M" },
+              { label: "市值",     value: "$" + ((quote.marketCap ?? 0) / 1e12).toFixed(2) + "T" },
             ].map(card => (
               <div key={card.label} style={{ background: "#1e293b", borderRadius: 10, padding: "16px 20px" }}>
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>{card.label}</div>
@@ -218,7 +280,7 @@ export default function StockPage({ params }) {
             ))}
           </div>
 
-          {/* MA 均線控制 */}
+          {/* MA 均線控制 + 儲存按鈕 */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12, alignItems: "center" }}>
             {MA_CONFIG.map(({ key, label }) => (
               <div key={key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -227,7 +289,7 @@ export default function StockPage({ params }) {
                     background: activeMA[key] ? maColors[key] + "33" : "#1e293b",
                     border: `1px solid ${activeMA[key] ? maColors[key] : "#334155"}`,
                     color: activeMA[key] ? maColors[key] : "#64748b",
-                    borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+                    borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
                   }}>
                   {label}
                 </button>
@@ -240,6 +302,21 @@ export default function StockPage({ params }) {
                 />
               </div>
             ))}
+
+            {/* 儲存 / 重置 */}
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+              {saved && (
+                <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>✓ 已儲存</span>
+              )}
+              <button onClick={handleSave}
+                style={{ background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>
+                💾 儲存設定
+              </button>
+              <button onClick={handleReset}
+                style={{ background: "none", border: "none", color: "#475569", fontSize: 12, cursor: "pointer" }}>
+                重置
+              </button>
+            </div>
           </div>
 
           {/* 布林通道控制 */}
@@ -249,7 +326,7 @@ export default function StockPage({ params }) {
                 background: showBB ? "#60a5fa33" : "#1e293b",
                 border: `1px solid ${showBB ? "#60a5fa" : "#334155"}`,
                 color: showBB ? "#60a5fa" : "#64748b",
-                borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+                borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer",
               }}>
               布林通道
             </button>
@@ -273,6 +350,7 @@ export default function StockPage({ params }) {
             )}
           </div>
 
+          {/* 圖表 */}
           <div style={{ background: "#1e293b", borderRadius: "12px 12px 0 0", padding: 16, marginBottom: 2 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#94a3b8" }}>K線 + 均線</div>
             <div ref={chartRef} />
