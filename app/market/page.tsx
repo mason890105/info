@@ -27,7 +27,6 @@ function stageColor(label: string): string {
   return "#64748b";
 }
 
-// 綜合評分
 function overallScore(d: any): { score: number; stage: string; color: string } {
   const pts: number[] = [];
   const v = (k: string) => d[k]?.value;
@@ -45,7 +44,6 @@ function overallScore(d: any): { score: number; stage: string; color: string } {
   return             { score, stage: "極度高估 · 頂部區間", color: "#ef4444" };
 }
 
-// ── 卡片設定 ──────────────────────────────────────────────
 function chg(c: number | null | undefined): string {
   if (c == null) return "";
   return (c >= 0 ? "+" : "") + c.toFixed(2) + "%";
@@ -56,26 +54,25 @@ function chgColor(c: number | null | undefined): string {
 }
 
 const CARDS = [
-  { key: "vix",  label: "VIX",           fmt: (d: any) => d?.value?.toFixed(2),         sub: (d: any) => chg(d?.change) },
-  { key: "vvix", label: "VVIX",          fmt: (d: any) => d?.value?.toFixed(2),         sub: (d: any) => chg(d?.change) },
-  { key: "skew", label: "SKEW",          fmt: (d: any) => d?.value?.toFixed(2),         sub: (d: any) => chg(d?.change) },
-  { key: "fg",   label: "Fear & Greed",  fmt: (d: any) => d?.value,                    sub: (d: any) => d?.label ?? "" },
-  { key: "rsi",  label: "SPY RSI",       fmt: (d: any) => d?.value?.toFixed(1),         sub: () => "14日" },
-  { key: "mfi",  label: "SPY MFI",       fmt: (d: any) => d?.value?.toFixed(1),         sub: () => "14日" },
-  { key: "dxy",  label: "美元指數",       fmt: (d: any) => d?.value?.toFixed(3),         sub: (d: any) => chg(d?.change) },
-  { key: "t10y", label: "美債 10Y",       fmt: (d: any) => d?.value?.toFixed(3) + "%",  sub: (d: any) => chg(d?.change) },
-  { key: "gold", label: "黃金",           fmt: (d: any) => d?.value?.toFixed(2),         sub: (d: any) => chg(d?.change) },
-  { key: "oil",  label: "原油 WTI",       fmt: (d: any) => d?.value?.toFixed(2),         sub: (d: any) => chg(d?.change) },
+  { key: "vix",  label: "VIX",          fmt: (d: any) => d?.value?.toFixed(2),        sub: (d: any) => chg(d?.change) },
+  { key: "vvix", label: "VVIX",         fmt: (d: any) => d?.value?.toFixed(2),        sub: (d: any) => chg(d?.change) },
+  { key: "skew", label: "SKEW",         fmt: (d: any) => d?.value?.toFixed(2),        sub: (d: any) => chg(d?.change) },
+  { key: "fg",   label: "Fear & Greed", fmt: (d: any) => d?.value,                   sub: (d: any) => d?.label ?? "" },
+  { key: "rsi",  label: "SPY RSI",      fmt: (d: any) => d?.value?.toFixed(1),        sub: () => "14日" },
+  { key: "mfi",  label: "SPY MFI",      fmt: (d: any) => d?.value?.toFixed(1),        sub: () => "14日" },
+  { key: "dxy",  label: "美元指數",      fmt: (d: any) => d?.value?.toFixed(3),        sub: (d: any) => chg(d?.change) },
+  { key: "t10y", label: "美債 10Y",      fmt: (d: any) => d?.value?.toFixed(3) + "%", sub: (d: any) => chg(d?.change) },
+  { key: "gold", label: "黃金",          fmt: (d: any) => d?.value?.toFixed(2),        sub: (d: any) => chg(d?.change) },
+  { key: "oil",  label: "原油 WTI",      fmt: (d: any) => d?.value?.toFixed(2),        sub: (d: any) => chg(d?.change) },
 ];
 
-// ── 主頁面 ────────────────────────────────────────────────
 export default function MarketPage() {
   const router = useRouter();
-  const [data, setData]         = useState<any>(null);
-  const [loading, setLoading]   = useState(true);
-  const [aiText, setAiText]     = useState("");
+  const [data, setData]           = useState<any>(null);
+  const [loading, setLoading]     = useState(true);
+  const [aiText, setAiText]       = useState("");
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiDone, setAiDone]     = useState(false);
+  const [aiDone, setAiDone]       = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
 
   useEffect(() => {
@@ -101,30 +98,47 @@ export default function MarketPage() {
     }).filter(Boolean).join("\n");
 
     const ov = overallScore(data);
+    const ma = data.maStatus;
 
-    const prompt = `你是頂尖的美股市場分析師，請根據以下即時市場指標，用繁體中文提供深度大盤分析。
+    // 均線技術面描述
+    const maLines = ma ? `
+━━ SPY 均線位置 ━━
+現價：$${ma.price}
+月線 MA20：$${ma.sma20}（${ma.aboveSma20 ? "站上" : "跌破"}月線，偏離 ${ma.diffSma20}%）
+季線 MA50：$${ma.sma50}（${ma.aboveSma50 ? "站上" : "跌破"}季線，偏離 ${ma.diffSma50}%）
+年線 MA200：$${ma.sma200}（${ma.aboveSma200 ? "站上" : "跌破"}年線，偏離 ${ma.diffSma200}%）
+趨勢：${
+  ma.aboveSma20 && ma.aboveSma50 && ma.aboveSma200 ? "多頭排列，三線全部站上" :
+  !ma.aboveSma20 && !ma.aboveSma50 && !ma.aboveSma200 ? "空頭排列，三線全部跌破" :
+  !ma.aboveSma20 && ma.aboveSma50 && ma.aboveSma200 ? "短期轉弱，跌破月線但守住季線年線" :
+  !ma.aboveSma20 && !ma.aboveSma50 && ma.aboveSma200 ? "中期轉弱，跌破月線季線但守住年線" :
+  "趨勢混亂，多空交戰"
+}` : "";
+
+    const prompt = `你是頂尖的美股市場分析師，請根據以下即時市場指標與技術面數據，用繁體中文提供深度大盤分析。
 
 ━━ 即時指標 ━━
 ${lines}
 
 ━━ 綜合位階 ━━
 ${ov.stage}（評分 ${ov.score.toFixed(0)}/100，0=極度熊市，100=極度牛市）
+${maLines}
 
-請提供以下四個面向：
+請提供以下四個面向，語氣直接，給出明確判斷：
 
 【一、市場位階判斷】
-根據所有指標綜合評估目前大盤位階，給出明確判斷與理由（3-4句）
+根據所有指標與均線位置綜合評估目前大盤位階，是底部、合理還是頂部？SPY 與月線、季線、年線的相對位置說明了什麼？（3-4句）
 
 【二、風險訊號解讀】
-目前最值得警惕的風險訊號，是否出現歷史上重要底部或頂部特徵（3-4句）
+目前最值得警惕的風險訊號是什麼？均線結構是否出現歷史上重要底部或頂部的特徵？跌破或站上關鍵均線的意義？（3-4句）
 
 【三、整體市場圖像】
-用敘事方式解讀這些指標呈現的整體市場狀態，不要逐一列出（3-4句）
+用敘事方式解讀這些指標與技術面呈現的整體市場狀態，情緒面與技術面是否互相印證？（3-4句）
 
 【四、操作參考方向】
-保守型、平衡型、積極型投資者各自的操作參考（各1-2句）
+保守型、平衡型、積極型投資者各自的操作參考，結合均線位置給出具體建議（各1-2句）
 
-語言要求：繁體中文，專業客觀，避免過度樂觀或悲觀。`;
+格式要求：純文字輸出，不使用任何 Markdown 符號。`;
 
     try {
       const res = await fetch("/api/ai-market", {
@@ -141,6 +155,7 @@ ${ov.stage}（評分 ${ov.score.toFixed(0)}/100，0=極度熊市，100=極度牛
   }
 
   const ov = data ? overallScore(data) : null;
+  const ma = data?.maStatus;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: 24 }}>
@@ -188,6 +203,32 @@ ${ov.stage}（評分 ${ov.score.toFixed(0)}/100，0=極度熊市，100=極度牛
             })}
           </div>
 
+          {/* SPY 均線狀態 */}
+          {ma && (
+            <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 24 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#94a3b8", marginBottom: 14 }}>SPY 均線技術面</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                {[
+                  { label: "月線 MA20", val: ma.sma20, above: ma.aboveSma20, diff: ma.diffSma20 },
+                  { label: "季線 MA50", val: ma.sma50, above: ma.aboveSma50, diff: ma.diffSma50 },
+                  { label: "年線 MA200", val: ma.sma200, above: ma.aboveSma200, diff: ma.diffSma200 },
+                ].map(item => (
+                  <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 11, color: "#475569", marginBottom: 4, fontWeight: 600 }}>{item.label}</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>${item.val}</div>
+                    <div style={{
+                      display: "inline-block", fontSize: 11, fontWeight: 600, borderRadius: 4, padding: "2px 8px",
+                      color: item.above ? "#22c55e" : "#ef4444",
+                      background: item.above ? "#22c55e22" : "#ef444422",
+                    }}>
+                      {item.above ? "▲ 站上" : "▼ 跌破"} {item.diff != null ? `${item.diff > 0 ? "+" : ""}${item.diff}%` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 綜合位階 */}
           {ov && (
             <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 24, display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
@@ -211,10 +252,11 @@ ${ov.stage}（評分 ${ov.score.toFixed(0)}/100，0=極度熊市，100=極度牛
 
           {/* AI 分析 */}
           {!aiDone && (
-            <button
-              onClick={runAI}
-              disabled={aiLoading}
-              style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10, padding: "12px 28px", fontSize: 15, fontWeight: 700, cursor: "pointer", opacity: aiLoading ? 0.7 : 1 }}>
+            <button onClick={runAI} disabled={aiLoading} style={{
+              background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10,
+              padding: "12px 28px", fontSize: 15, fontWeight: 700, cursor: "pointer",
+              opacity: aiLoading ? 0.7 : 1,
+            }}>
               {aiLoading ? "AI 分析中..." : "🔍 AI 深度分析"}
             </button>
           )}
@@ -224,14 +266,18 @@ ${ov.stage}（評分 ${ov.score.toFixed(0)}/100，0=極度熊市，100=極度牛
             </div>
           )}
           {aiText && (
-            <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, fontSize: 14, lineHeight: 1.85, color: "#cbd5e1", whiteSpace: "pre-wrap", marginTop: 16 }}>
+            <div style={{
+              background: "#1e293b", borderRadius: 12, padding: 20, fontSize: 14,
+              lineHeight: 1.85, color: "#cbd5e1", whiteSpace: "pre-wrap", marginTop: 16,
+            }}>
               {aiText}
             </div>
           )}
           {aiDone && (
-            <button
-              onClick={() => { setAiDone(false); setAiText(""); }}
-              style={{ background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 10, padding: "12px 28px", fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 12 }}>
+            <button onClick={() => { setAiDone(false); setAiText(""); }} style={{
+              background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 10,
+              padding: "12px 28px", fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 12,
+            }}>
               重新分析
             </button>
           )}
