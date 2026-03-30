@@ -101,7 +101,7 @@ const DATA_CARDS = (quote: any) => [
   { label: "市值",     value: "$" + ((quote.marketCap ?? 0) / 1e12).toFixed(2) + "T" },
 ];
 
-export default function StockPage({ params }: { params: any }) {
+export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { symbol: raw } = use(params);
   const symbol = raw.toUpperCase();
   const router = useRouter();
@@ -156,7 +156,6 @@ export default function StockPage({ params }: { params: any }) {
     });
   }, [symbol]);
 
-  // 圖表只在 technical tab 渲染
   useEffect(() => {
     if (activeTab !== "technical") return;
     if (!chartRef.current || candles.length === 0 || !indicators) return;
@@ -198,13 +197,13 @@ export default function StockPage({ params }: { params: any }) {
         ema8:  indicators.ema8,  ema21:  indicators.ema21,
       };
       MA_CONFIG.forEach(({ key }) => {
-        const raw = maDataMap[key] ?? [];
+        const rawData = maDataMap[key] ?? [];
         const fieldKey = key.startsWith("sma") ? "sma" : "ema";
-        const d = [...raw].reverse()
+        const d = [...rawData].reverse()
           .filter((p: any) => p[fieldKey] != null)
           .map((p: any) => ({ time: p.date.slice(0, 10), value: p[fieldKey] }));
         const series = mainChart.addSeries(lc.LineSeries, {
-          color: maColors[key], lineWidth: 1,
+          color: maColors[key], lineWidth: 1 as const,
           priceLineVisible: false, lastValueVisible: false, visible: activeMA[key],
         });
         series.setData(d);
@@ -213,7 +212,7 @@ export default function StockPage({ params }: { params: any }) {
 
       if (showBB && candles.length > bbPeriod) {
         const bbData = calcBollinger(candles, bbPeriod, bbMult);
-        const bbStyle = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false };
+        const bbStyle = { lineWidth: 1 as const, priceLineVisible: false, lastValueVisible: false };
         const upper  = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
         const middle = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa" });
         const lower  = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
@@ -320,7 +319,7 @@ export default function StockPage({ params }: { params: any }) {
           {/* Tab 列 */}
           <div style={{ display: "flex", borderBottom: "1px solid #1e293b", marginBottom: 28, gap: 4 }}>
             {([ ["overview", "📋 概覽"], ["technical", "📈 技術指標"], ["financials", "📊 財報"] ] as [Tab, string][]).map(([key, label]) => (
-              <button key={key} onClick={() => setActiveTab(key)} style={{
+              <button key={key} onClick={() => setActiveTab(key as Tab)} style={{
                 background: "none", border: "none", cursor: "pointer",
                 padding: "10px 20px", fontSize: 14, fontWeight: 600,
                 color: activeTab === key ? "#3b82f6" : "#475569",
