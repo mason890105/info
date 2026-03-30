@@ -3,24 +3,38 @@
 const FMP_KEY = process.env.FMP_API_KEY!;
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
-const globalForRedis = global as unknown as { redis?: Redis };
-const redis =
-  globalForRedis.redis ??
-  new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
-if (process.env.NODE_ENV !== "production") globalForRedis.redis = redis;
+// ── 快取層：有 REDIS_URL 用 Redis，沒有用 in-memory Map ──
+const memCache = new Map<string, { data: string; exp: number }>();
 
-const TTL = {
-  quote: 15,
-  candles: 60 * 60,
-  financials: 60 * 60 * 24,
-  indicator: 60 * 5,
-};
+let redis: Redis | null = null;
+if (process.env.REDIS_URL) {
+  try {
+    redis = new Redis(process.env.REDIS_URL, {
+      lazyConnect: true,
+      enableOfflineQueue: false,
+      retryStrategy: () => null,
+    });
+    redis.on("error", () => { redis = null; });
+  } catch { redis = null; }
+}
 
 async function cached<T>(key: string, ttl: number, fetcher: () => Promise<T>): Promise<T> {
-  const hit = await redis.get(key);
-  if (hit) return JSON.parse(hit) as T;
+  // 嘗試 Redis
+  if (redis) {
+    try {
+      const hit = await redis.get(key);
+      if (hit) return JSON.parse(hit) as T;
+      const data = await fetcher();
+      await redis.setex(key, ttl, JSON.stringify(data));
+      return data;
+    } catch {}
+  }
+  // fallback: in-memory
+  const now = Date.now();
+  const mem = memCache.get(key);
+  if (mem && mem.exp > now) return JSON.parse(mem.data) as T;
   const data = await fetcher();
-  await redis.setex(key, ttl, JSON.stringify(data));
+  memCache.set(key, { data: JSON.stringify(data), exp: now + ttl * 1000 });
   return data;
 }
 
@@ -40,7 +54,7 @@ export interface Quote {
   symbol: string; name: string; price: number; change: number;
   changePercentage: number; dayHigh: number; dayLow: number;
   volume: number; marketCap: number; open: number; previousClose: number;
-  exchange?: string;
+  pe?: number; priceEarningsRatio?: number; exchange?: string;
 }
 
 export async function getQuote(symbol: string): Promise<Quote> {
@@ -74,15 +88,17 @@ export async function getDailyCandles(symbol: string, from?: string, to?: string
 
 export interface IncomeStatement {
   date: string; symbol: string; revenue: number; grossProfit: number;
-  grossProfitRatio: number; operatingIncome: number; netIncome: number; eps: number; ebitda: number;
+  grossProfitRatio: number; operatingIncome: number; operatingIncomeRatio: number;
+  netIncome: number; eps: number; ebitda: number;
 }
 export interface BalanceSheet {
   date: string; totalAssets: number; totalLiabilities: number;
   totalStockholdersEquity: number; cashAndCashEquivalents: number; totalDebt: number;
+  totalCurrentAssets: number; totalCurrentLiabilities: number;
 }
 export interface CashFlowStatement {
   date: string; operatingCashFlow: number; capitalExpenditure: number;
-  freeCashFlow: number; dividendsPaid: number;
+  freeCashFlow: number; dividendsPaid: number; commonStockRepurchased?: number;
 }
 
 type Period = "annual" | "quarter";
@@ -159,7 +175,9 @@ export async function clearStockCache(symbol: string): Promise<void> {
     `sma:${symbol}*`, `ema:${symbol}*`,
   ];
   for (const pattern of patterns) {
-    const keys = await redis.keys(pattern);
-    if (keys.length) await redis.del(...keys);
+    try {
+      const keys = await redis.keys(pattern);
+      if (keys.length) await redis.del(...keys);
+    } catch {}
   }
 }
