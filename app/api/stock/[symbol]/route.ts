@@ -5,7 +5,6 @@ import {
   getIncomeStatements,
   getBalanceSheets,
   getCashFlows,
-  getRSI,
   getMACD,
   getSMA,
   getEMA,
@@ -100,14 +99,13 @@ export async function GET(
       }
 
       case "indicators": {
-        const [rsi, macd, sma50, sma200, ema20] = await Promise.all([
-          getRSI(symbol),
+        const [macd, sma50, sma200, ema20] = await Promise.all([
           getMACD(symbol),
           getSMA(symbol, 50),
           getSMA(symbol, 200),
           getEMA(symbol, 20),
         ]);
-        return NextResponse.json({ rsi, macd, sma50, sma200, ema20 });
+        return NextResponse.json({ macd, sma50, sma200, ema20 });
       }
 
       default:
