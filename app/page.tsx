@@ -100,17 +100,47 @@ export default function HomePage() {
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 50,
         background: "#0d1117", borderBottom: "1px solid #1e293b",
-        height: 36, overflow: "hidden", display: "flex", alignItems: "center",
+        height: 40, overflow: "hidden", display: "flex", alignItems: "center",
       }}>
         <style>{`
           @keyframes ticker { from { transform: translateX(0) } to { transform: translateX(-50%) } }
-          .ticker-inner { display: flex; white-space: nowrap; animation: ticker 30s linear infinite; }
+          .ticker-inner { display: flex; white-space: nowrap; animation: ticker 22s linear infinite; }
+          .ticker-inner:hover { animation-play-state: paused; }
+          @keyframes pulse-up { 0%,100% { opacity:1; transform:translateY(0) } 50% { opacity:0.6; transform:translateY(-2px) } }
+          @keyframes pulse-down { 0%,100% { opacity:1; transform:translateY(0) } 50% { opacity:0.6; transform:translateY(2px) } }
+          .tick-up { animation: pulse-up 2s ease-in-out infinite; }
+          .tick-down { animation: pulse-down 2s ease-in-out infinite; }
         `}</style>
-        <div className="ticker-inner" style={{ fontSize: 12, color: "#94a3b8", gap: 0 }}>
-          {/* 重複兩次讓動畫無縫循環 */}
+        <div className="ticker-inner">
           {[0, 1].map(i => (
-            <span key={i} style={{ paddingRight: 80 }}>
-              {indicesLoading ? "載入指數中..." : tickerText}
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 0, paddingRight: 60 }}>
+              {Object.entries(INDEX_LABELS).map(([key, label]) => {
+                const d = indices[key];
+                const up = d ? d.changePercent >= 0 : null;
+                return (
+                  <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "0 28px", borderRight: "1px solid #1e293b" }}>
+                    <span style={{ fontSize: 11, color: "#475569", fontWeight: 700, letterSpacing: 1 }}>{label}</span>
+                    {indicesLoading || !d ? (
+                      <span style={{ fontSize: 12, color: "#334155" }}>—</span>
+                    ) : (
+                      <>
+                        <span className={up ? "tick-up" : "tick-down"} style={{
+                          fontSize: 13, fontWeight: 800, color: "#e2e8f0" }}>
+                          {d.price?.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </span>
+                        <span style={{
+                          fontSize: 12, fontWeight: 700,
+                          color: up ? "#22c55e" : "#ef4444",
+                          background: up ? "#14532d44" : "#450a0a44",
+                          padding: "1px 7px", borderRadius: 4,
+                        }}>
+                          {up ? "▲" : "▼"} {Math.abs(d.changePercent).toFixed(2)}%
+                        </span>
+                      </>
+                    )}
+                  </span>
+                );
+              })}
             </span>
           ))}
         </div>
