@@ -5,12 +5,10 @@ import {
   getIncomeStatements,
   getBalanceSheets,
   getCashFlows,
-  getMACD,
   getSMA,
   getEMA,
 } from "@/lib/fmp";
 
-// ── Yahoo Finance 歷史收盤價 ────────────────────────────────────────────────
 async function yahooClose(ticker: string): Promise<number[]> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=15mo`;
@@ -28,14 +26,8 @@ async function yahooClose(ticker: string): Promise<number[]> {
   }
 }
 
-// ── RS 相對強度計算 ────────────────────────────────────────────────────────
 type RSKey = "m1" | "m3" | "y1";
-interface RSEntry {
-  stock: number;
-  spy: number;
-  diff: number;
-  label: string;
-}
+interface RSEntry { stock: number; spy: number; diff: number; label: string; }
 
 function calcRS(stock: number[], spy: number[]): Record<RSKey, RSEntry> {
   const periods: { key: RSKey; days: number }[] = [
@@ -46,27 +38,18 @@ function calcRS(stock: number[], spy: number[]): Record<RSKey, RSEntry> {
   const result = {} as Record<RSKey, RSEntry>;
   for (const { key, days } of periods) {
     if (stock.length < days + 1 || spy.length < days + 1) {
-      result[key] = { stock: 0, spy: 0, diff: 0, label: "資料不足" };
-      continue;
+      result[key] = { stock: 0, spy: 0, diff: 0, label: "資料不足" }; continue;
     }
-    const sLen = stock.length;
-    const pLen = spy.length;
-    const sRet = ((stock[sLen - 1] - stock[sLen - 1 - days]) / stock[sLen - 1 - days]) * 100;
-    const pRet = ((spy[pLen - 1] - spy[pLen - 1 - days]) / spy[pLen - 1 - days]) * 100;
+    const sLen = stock.length, pLen = spy.length;
+    const sRet = ((stock[sLen-1] - stock[sLen-1-days]) / stock[sLen-1-days]) * 100;
+    const pRet = ((spy[pLen-1]   - spy[pLen-1-days])   / spy[pLen-1-days])   * 100;
     const diff = sRet - pRet;
-    const label =
-      diff >= 10 ? "強勢★" : diff >= 3 ? "略強" : diff >= -3 ? "中立" : diff >= -10 ? "略弱" : "弱勢";
-    result[key] = {
-      stock: +sRet.toFixed(2),
-      spy: +pRet.toFixed(2),
-      diff: +diff.toFixed(2),
-      label,
-    };
+    const label = diff >= 10 ? "強勢★" : diff >= 3 ? "略強" : diff >= -3 ? "中立" : diff >= -10 ? "略弱" : "弱勢";
+    result[key] = { stock: +sRet.toFixed(2), spy: +pRet.toFixed(2), diff: +diff.toFixed(2), label };
   }
   return result;
 }
 
-// ── Main Handler ───────────────────────────────────────────────────────────
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
@@ -99,13 +82,24 @@ export async function GET(
       }
 
       case "indicators": {
-        const [macd, sma50, sma200, ema20] = await Promise.all([
-          getMACD(symbol),
-          getSMA(symbol, 50),
-          getSMA(symbol, 200),
-          getEMA(symbol, 20),
-        ]);
-        return NextResponse.json({ macd, sma50, sma200, ema20 });
+        // 解析 ?lines=SMA-20,EMA-8,SMA-50（最多 10 條）
+        const linesParam = req.nextUrl.searchParams.get("lines") ?? "SMA-20,SMA-50,SMA-200";
+        const lines = linesParam.split(",").slice(0, 10).map(s => s.trim().toUpperCase());
+
+        const fetches = lines.map(line => {
+          const [type, periodStr] = line.split("-");
+          const p = parseInt(periodStr);
+          if (!type || isNaN(p)) return Promise.resolve({ key: line, data: [] });
+          if (type === "SMA") return getSMA(symbol, p).then(data => ({ key: line, data }));
+          if (type === "EMA") return getEMA(symbol, p).then(data => ({ key: line, data }));
+          return Promise.resolve({ key: line, data: [] });
+        });
+
+        const results = await Promise.all(fetches);
+        const indicators: Record<string, any[]> = {};
+        results.forEach(r => { indicators[r.key] = r.data; });
+
+        return NextResponse.json({ indicators });
       }
 
       default:
