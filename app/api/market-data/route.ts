@@ -1,56 +1,70 @@
 import { NextResponse } from "next/server";
 
-const FMP_KEY = process.env.FMP_API_KEY!;
-const FMP_BASE = "https://financialmodelingprep.com/stable";
+const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
 
-async function fmpQuote(symbols: string): Promise<any[]> {
-  // 直接拼接 URL，避免 searchParams 二次編碼 ^ 符號
-  const url = `${FMP_BASE}/quote?symbol=${symbols}&apikey=${FMP_KEY}`;
-  const res = await fetch(url, { next: { revalidate: 60 } });
-  if (!res.ok) throw new Error(`FMP ${res.status}`);
-  return res.json();
-}
-
-async function fmpIndicator(symbol: string, type: string): Promise<any[]> {
-  const url = `${FMP_BASE}/technical-indicator/daily?symbol=${symbol}&type=${type}&period=14&limit=1&apikey=${FMP_KEY}`;
-  const res = await fetch(url, { next: { revalidate: 300 } });
-  if (!res.ok) throw new Error(`FMP ${res.status}`);
-  return res.json();
+async function yahooQuote(symbol: string): Promise<{ price: number; change: number; changePercent: number } | null> {
+  try {
+    const url = `${YAHOO_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta) return null;
+    const price         = meta.regularMarketPrice ?? null;
+    const prevClose     = meta.chartPreviousClose ?? meta.previousClose ?? null;
+    const change        = price != null && prevClose != null ? price - prevClose : null;
+    const changePercent = price != null && prevClose != null ? ((price - prevClose) / prevClose) * 100 : null;
+    return { price, change, changePercent };
+  } catch {
+    return null;
+  }
 }
 
 export async function GET() {
   try {
-    const [quotes, spyRsi, spyMfi, fng] = await Promise.allSettled([
-      fmpQuote("^VIX,^VVIX,^SKEW,GCUSD,CLUSD,DX-Y.NYB,^TNX"),
-      fmpIndicator("SPY", "rsi"),
-      fmpIndicator("SPY", "mfi"),
+    const [vix, vvix, skew, gold, oil, dxy, t10y, spx, ndx, dji, rut, fng] = await Promise.all([
+      yahooQuote("^VIX"),
+      yahooQuote("^VVIX"),
+      yahooQuote("^SKEW"),
+      yahooQuote("GC=F"),       // 黃金期貨
+      yahooQuote("CL=F"),       // 原油期貨
+      yahooQuote("DX-Y.NYB"),   // 美元指數
+      yahooQuote("^TNX"),       // 美債10Y
+      yahooQuote("^GSPC"),      // S&P 500
+      yahooQuote("^IXIC"),      // Nasdaq
+      yahooQuote("^DJI"),       // 道瓊
+      yahooQuote("^RUT"),       // 羅素2000
       fetch("https://api.alternative.me/fng/?limit=1").then(r => r.json()),
     ]);
 
-    const q: Record<string, any> = {};
-    if (quotes.status === "fulfilled") {
-      for (const item of quotes.value ?? []) q[item.symbol] = item;
-    }
-
-    const get = (sym: string) => q[sym];
-
     let fg: number | null = null;
     let fgLabel = "";
-    if (fng.status === "fulfilled") {
-      fg = parseInt(fng.value?.data?.[0]?.value ?? "");
-      fgLabel = fng.value?.data?.[0]?.value_classification ?? "";
-    }
+    try {
+      fg = parseInt((fng as any)?.data?.[0]?.value ?? "");
+      fgLabel = (fng as any)?.data?.[0]?.value_classification ?? "";
+    } catch {}
 
     return NextResponse.json({
-      vix:  { value: get("^VIX")?.price,      change: get("^VIX")?.changePercentage },
-      vvix: { value: get("^VVIX")?.price,     change: get("^VVIX")?.changePercentage },
-      skew: { value: get("^SKEW")?.price,     change: get("^SKEW")?.changePercentage },
-      gold: { value: get("GCUSD")?.price,     change: get("GCUSD")?.changePercentage },
-      oil:  { value: get("CLUSD")?.price,     change: get("CLUSD")?.changePercentage },
-      dxy:  { value: get("DX-Y.NYB")?.price,  change: get("DX-Y.NYB")?.changePercentage },
-      t10y: { value: get("^TNX")?.price,      change: get("^TNX")?.changePercentage },
-      rsi:  { value: spyRsi.status === "fulfilled" ? spyRsi.value?.[0]?.rsi : null },
-      mfi:  { value: spyMfi.status === "fulfilled" ? spyMfi.value?.[0]?.mfi : null },
+      // 大盤指數（給首頁用）
+      indices: {
+        spx:  spx  ? { price: spx.price,  change: spx.change,  changePercent: spx.changePercent  } : null,
+        ndx:  ndx  ? { price: ndx.price,  change: ndx.change,  changePercent: ndx.changePercent  } : null,
+        dji:  dji  ? { price: dji.price,  change: dji.change,  changePercent: dji.changePercent  } : null,
+        rut:  rut  ? { price: rut.price,  change: rut.change,  changePercent: rut.changePercent  } : null,
+      },
+      // 大盤指標（給 /market 頁面用）
+      vix:  vix  ? { value: vix.price,  change: vix.changePercent  } : {},
+      vvix: vvix ? { value: vvix.price, change: vvix.changePercent } : {},
+      skew: skew ? { value: skew.price, change: skew.changePercent } : {},
+      gold: gold ? { value: gold.price, change: gold.changePercent } : {},
+      oil:  oil  ? { value: oil.price,  change: oil.changePercent  } : {},
+      dxy:  dxy  ? { value: dxy.price,  change: dxy.changePercent  } : {},
+      t10y: t10y ? { value: t10y.price, change: t10y.changePercent } : {},
+      rsi:  { value: null },
+      mfi:  { value: null },
       fg:   { value: fg, label: fgLabel },
       updatedAt: new Date().toISOString(),
     });

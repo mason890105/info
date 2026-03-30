@@ -13,32 +13,24 @@ const POPULAR = [
   { symbol: "TSM", name: "台積電" },
 ];
 
-// 三大指數 + 羅素2000
-const INDICES = [
-  { symbol: "%5EGSPC", label: "S&P 500",    key: "^GSPC" },
-  { symbol: "%5EIXIC", label: "Nasdaq",      key: "^IXIC" },
-  { symbol: "%5EDJI",  label: "道瓊",        key: "^DJI"  },
-  { symbol: "%5ERUT",  label: "羅素 2000",   key: "^RUT"  },
-];
-
-interface IndexData {
-  price: number;
-  change: number;
-  changePercentage: number;
-}
+const INDEX_LABELS: Record<string, string> = {
+  spx: "S&P 500",
+  ndx: "Nasdaq",
+  dji: "道瓊",
+  rut: "羅素 2000",
+};
 
 export default function HomePage() {
   const router = useRouter();
   const [input, setInput] = useState("");
-  const [indices, setIndices] = useState<Record<string, IndexData>>({});
+  const [indices, setIndices] = useState<Record<string, any>>({});
   const [indicesLoading, setIndicesLoading] = useState(true);
 
   useEffect(() => {
-    const symbols = INDICES.map(i => i.symbol).join(",");
-    fetch(`/api/indices?symbols=${symbols}`)
+    fetch("/api/market-data")
       .then(r => r.json())
-      .then(data => {
-        setIndices(data);
+      .then(d => {
+        setIndices(d.indices ?? {});
         setIndicesLoading(false);
       })
       .catch(() => setIndicesLoading(false));
@@ -68,15 +60,15 @@ export default function HomePage() {
       {/* 三大指數 + 羅素2000 */}
       <div style={{ width: "100%", maxWidth: 560, marginBottom: 32 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-          {INDICES.map(idx => {
-            const d = indices[idx.key];
-            const up = d ? d.changePercentage >= 0 : null;
+          {Object.entries(INDEX_LABELS).map(([key, label]) => {
+            const d = indices[key];
+            const up = d ? d.changePercent >= 0 : null;
             return (
-              <div key={idx.key} style={{
+              <div key={key} style={{
                 background: "#1e293b", borderRadius: 10, padding: "12px 10px", textAlign: "center",
               }}>
                 <div style={{ fontSize: 11, color: "#475569", marginBottom: 4, fontWeight: 600 }}>
-                  {idx.label}
+                  {label}
                 </div>
                 {indicesLoading ? (
                   <div style={{ fontSize: 13, color: "#334155" }}>—</div>
@@ -86,11 +78,11 @@ export default function HomePage() {
                       {d.price?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
-                      {up ? "▲" : "▼"} {Math.abs(d.changePercentage).toFixed(2)}%
+                      {up ? "▲" : "▼"} {Math.abs(d.changePercent).toFixed(2)}%
                     </div>
                   </>
                 ) : (
-                  <div style={{ fontSize: 11, color: "#475569" }}>無資料</div>
+                  <div style={{ fontSize: 11, color: "#475569" }}>—</div>
                 )}
               </div>
             );
@@ -111,14 +103,11 @@ export default function HomePage() {
             color: "#e2e8f0", outline: "none",
           }}
         />
-        <button
-          onClick={() => go(input)}
-          style={{
-            background: "#3b82f6", color: "#fff", border: "none",
-            borderRadius: 10, padding: "14px 24px", fontSize: 16,
-            fontWeight: 700, cursor: "pointer",
-          }}
-        >
+        <button onClick={() => go(input)} style={{
+          background: "#3b82f6", color: "#fff", border: "none",
+          borderRadius: 10, padding: "14px 24px", fontSize: 16,
+          fontWeight: 700, cursor: "pointer",
+        }}>
           查詢
         </button>
       </div>
@@ -128,13 +117,10 @@ export default function HomePage() {
         <div style={{ fontSize: 13, color: "#475569", marginBottom: 12, fontWeight: 600 }}>熱門股票</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
           {POPULAR.map(s => (
-            <button
-              key={s.symbol}
-              onClick={() => go(s.symbol)}
-              style={{
-                background: "#1e293b", border: "1px solid #334155",
-                borderRadius: 10, padding: "12px 8px", cursor: "pointer", textAlign: "center",
-              }}
+            <button key={s.symbol} onClick={() => go(s.symbol)} style={{
+              background: "#1e293b", border: "1px solid #334155",
+              borderRadius: 10, padding: "12px 8px", cursor: "pointer", textAlign: "center",
+            }}
               onMouseEnter={e => e.currentTarget.style.background = "#334155"}
               onMouseLeave={e => e.currentTarget.style.background = "#1e293b"}
             >
@@ -147,14 +133,12 @@ export default function HomePage() {
 
       {/* 大盤位階分析入口 */}
       <div style={{ width: "100%", maxWidth: 560 }}>
-        <button
-          onClick={() => router.push("/market")}
-          style={{
-            width: "100%", background: "#1e293b", border: "1px solid #334155",
-            borderRadius: 10, padding: "14px", cursor: "pointer", color: "#e2e8f0",
-            fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center",
-            justifyContent: "center", gap: 8,
-          }}
+        <button onClick={() => router.push("/market")} style={{
+          width: "100%", background: "#1e293b", border: "1px solid #334155",
+          borderRadius: 10, padding: "14px", cursor: "pointer", color: "#e2e8f0",
+          fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center",
+          justifyContent: "center", gap: 8,
+        }}
           onMouseEnter={e => e.currentTarget.style.background = "#334155"}
           onMouseLeave={e => e.currentTarget.style.background = "#1e293b"}
         >
