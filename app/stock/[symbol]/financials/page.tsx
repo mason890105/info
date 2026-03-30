@@ -9,7 +9,6 @@ import {
 type Period = "quarter" | "annual";
 type Tab = "income" | "balance" | "cashflow" | "metrics";
 
-// ── 格式化工具 ──────────────────────────────────────────
 const fmt  = (n: number) => n == null ? "N/A" : `$${(n / 1e9).toFixed(2)}B`;
 const pct  = (n: number) => n == null ? "N/A" : `${(n * 100).toFixed(1)}%`;
 const fmtM = (n: number) => n == null ? "N/A" : `$${(n / 1e6).toFixed(0)}M`;
@@ -33,7 +32,6 @@ function YoyBadge({ val }: { val: number | null }) {
   );
 }
 
-// ── 關鍵指標卡片 ────────────────────────────────────────
 function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 16px", flex: 1, minWidth: 120 }}>
@@ -96,9 +94,8 @@ export default function FinancialsPage() {
 
   const { income = [], balance = [], cashflow = [] } = data;
 
-  // ── 圖表資料 ──────────────────────────────────────────
   const incomeChart = [...income].reverse().map((q: any, i: number, arr: any[]) => {
-    const prev = arr[i - 4]; // 同期去年（季報差4筆，年報差1筆）
+    const prev = arr[i - 4];
     return {
       date: q.date?.slice(0, 7),
       營收: +(q.revenue / 1e9).toFixed(2),
@@ -135,35 +132,49 @@ export default function FinancialsPage() {
     const b = balance[balance.length - 1 - i];
     return {
       date: q.date?.slice(0, 7),
-      毛利率: +(q.grossProfitRatio * 100).toFixed(1),
+      毛利率: q.revenue > 0 ? +((q.grossProfit / q.revenue) * 100).toFixed(1) : 0,
       淨利率: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
       ROE: b?.totalStockholdersEquity > 0 ? +((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1) : 0,
       營業利益率: q.operatingIncomeRatio ? +(q.operatingIncomeRatio * 100).toFixed(1) : 0,
     };
   });
 
-  // ── 關鍵指標計算 ──────────────────────────────────────
   const latestIncome  = income[0]  ?? {};
   const latestBalance = balance[0] ?? {};
   const latestCF      = cashflow[0] ?? {};
-  const prevIncome    = income[4]   ?? {}; // 去年同期
+  const prevIncome    = income[4]   ?? {};
 
-  const grossMargin   = latestIncome.grossProfitRatio ? (latestIncome.grossProfitRatio * 100).toFixed(1) + "%" : "N/A";
-  const netMargin     = latestIncome.revenue > 0 ? ((latestIncome.netIncome / latestIncome.revenue) * 100).toFixed(1) + "%" : "N/A";
-  const roe           = latestBalance.totalStockholdersEquity > 0 ? ((latestIncome.netIncome / latestBalance.totalStockholdersEquity) * 100).toFixed(1) + "%" : "N/A";
-  const debtToEquity  = latestBalance.totalStockholdersEquity > 0 ? (latestBalance.totalDebt / latestBalance.totalStockholdersEquity).toFixed(2) : "N/A";
-  const currentRatio  = latestBalance.totalCurrentLiabilities > 0 ? (latestBalance.totalCurrentAssets / latestBalance.totalCurrentLiabilities).toFixed(2) : "N/A";
-  const fcfMargin     = latestIncome.revenue > 0 ? ((latestCF.freeCashFlow / latestIncome.revenue) * 100).toFixed(1) + "%" : "N/A";
+  // ✅ 毛利率改成自己算
+  const grossMargin  = latestIncome.revenue > 0
+    ? ((latestIncome.grossProfit / latestIncome.revenue) * 100).toFixed(1) + "%"
+    : "N/A";
+  const netMargin    = latestIncome.revenue > 0
+    ? ((latestIncome.netIncome / latestIncome.revenue) * 100).toFixed(1) + "%"
+    : "N/A";
+  const roe          = latestBalance.totalStockholdersEquity > 0
+    ? ((latestIncome.netIncome / latestBalance.totalStockholdersEquity) * 100).toFixed(1) + "%"
+    : "N/A";
+  const debtToEquity = latestBalance.totalStockholdersEquity > 0
+    ? (latestBalance.totalDebt / latestBalance.totalStockholdersEquity).toFixed(2)
+    : "N/A";
+  const currentRatio = latestBalance.totalCurrentLiabilities > 0
+    ? (latestBalance.totalCurrentAssets / latestBalance.totalCurrentLiabilities).toFixed(2)
+    : "N/A";
+  const fcfMargin    = latestIncome.revenue > 0
+    ? ((latestCF.freeCashFlow / latestIncome.revenue) * 100).toFixed(1) + "%"
+    : "N/A";
   const revenueGrowth = yoy(latestIncome.revenue, prevIncome.revenue);
   const epsGrowth     = yoy(latestIncome.eps, prevIncome.eps);
-  const pe            = quote?.pe ? quote.pe.toFixed(1) : "N/A";
 
-  const tooltipStyle  = { contentStyle: { background: "#1e293b", border: "none", color: "#e2e8f0", fontSize: 12 } };
+  // ✅ P/E 兩個欄位名稱都試
+  const peVal = quote?.pe ?? quote?.priceEarningsRatio;
+  const pe    = peVal ? Number(peVal).toFixed(1) : "N/A";
+
+  const tooltipStyle = { contentStyle: { background: "#1e293b", border: "none", color: "#e2e8f0", fontSize: 12 } };
 
   return (
     <div style={s.page}>
 
-      {/* 頂部 */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
         <button onClick={() => router.push(`/stock/${symbol}`)} style={{
           background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
@@ -175,7 +186,7 @@ export default function FinancialsPage() {
         </div>
       </div>
 
-      {/* ── 關鍵指標快覽 ── */}
+      {/* 關鍵指標快覽 */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
         <MetricCard label="本益比 P/E" value={pe} sub="目前估值" />
         <MetricCard label="毛利率" value={grossMargin} sub={`淨利率 ${netMargin}`} color="#22c55e" />
@@ -221,10 +232,9 @@ export default function FinancialsPage() {
         ))}
       </div>
 
-      {/* ── 損益表 Tab ── */}
+      {/* 損益表 */}
       {tab === "income" && (
         <>
-          {/* AI 分析 */}
           <div style={s.card}>
             <div style={s.section}>🤖 AI 財報解讀</div>
             {!aiDone && (
@@ -244,11 +254,10 @@ export default function FinancialsPage() {
             )}
           </div>
 
-          {/* 營收成長率長條圖 */}
           <div style={s.card}>
             <div style={s.section}>營收 / 毛利 / 淨利（十億美元）</div>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={incomeChart} {...tooltipStyle}>
+              <BarChart data={incomeChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
@@ -261,11 +270,10 @@ export default function FinancialsPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* EPS 趨勢 */}
           <div style={s.card}>
             <div style={s.section}>每股盈餘 EPS 趨勢</div>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={epsChart} {...tooltipStyle}>
+              <LineChart data={epsChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
@@ -276,7 +284,6 @@ export default function FinancialsPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* 損益表數據 */}
           <div style={s.card}>
             <div style={s.section}>損益表數據</div>
             <div style={{ overflowX: "auto" }}>
@@ -298,7 +305,7 @@ export default function FinancialsPage() {
                         <td style={s.td}>{fmt(q.revenue)}</td>
                         <td style={s.td}><YoyBadge val={revGrowth} /></td>
                         <td style={s.td}>{fmt(q.grossProfit)}</td>
-                        <td style={s.td}>{pct(q.grossProfitRatio)}</td>
+                        <td style={s.td}>{q.revenue > 0 ? ((q.grossProfit / q.revenue) * 100).toFixed(1) + "%" : "N/A"}</td>
                         <td style={s.td}>{fmt(q.operatingIncome)}</td>
                         <td style={{ ...s.td, color: q.netIncome >= 0 ? "#22c55e" : "#ef4444", fontWeight: 700 }}>{fmt(q.netIncome)}</td>
                         <td style={{ ...s.td, fontWeight: 700 }}>${q.eps?.toFixed(2)}</td>
@@ -313,10 +320,9 @@ export default function FinancialsPage() {
         </>
       )}
 
-      {/* ── 資產負債 Tab ── */}
+      {/* 資產負債 */}
       {tab === "balance" && (
         <>
-          {/* 健康度指標 */}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
             <MetricCard label="流動比率" value={currentRatio} sub="≥1.5 較健康" color={parseFloat(currentRatio) >= 1.5 ? "#22c55e" : "#ef4444"} />
             <MetricCard label="負債權益比" value={debtToEquity} sub="越低越穩健" color={parseFloat(debtToEquity) > 2 ? "#ef4444" : "#22c55e"} />
@@ -370,7 +376,7 @@ export default function FinancialsPage() {
         </>
       )}
 
-      {/* ── 現金流 Tab ── */}
+      {/* 現金流 */}
       {tab === "cashflow" && (
         <>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
@@ -425,7 +431,7 @@ export default function FinancialsPage() {
         </>
       )}
 
-      {/* ── 獲利能力 Tab ── */}
+      {/* 獲利能力 */}
       {tab === "metrics" && (
         <>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
@@ -445,15 +451,14 @@ export default function FinancialsPage() {
                 <Tooltip {...tooltipStyle} formatter={(v: any) => v + "%"} />
                 <Legend />
                 <ReferenceLine y={0} stroke="#475569" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="毛利率"   stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="淨利率"   stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="ROE"      stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="毛利率"    stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="淨利率"    stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="ROE"       stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
                 <Line type="monotone" dataKey="營業利益率" stroke="#a78bfa" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
-          {/* 詳細指標表格 */}
           <div style={s.card}>
             <div style={s.section}>逐期指標對照</div>
             <div style={{ overflowX: "auto" }}>
@@ -469,12 +474,16 @@ export default function FinancialsPage() {
                   {income.map((q: any, i: number) => {
                     const b = balance[i] ?? {};
                     const prev = income[i + 4];
-                    const roe_ = b.totalStockholdersEquity > 0 ? ((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1) : "N/A";
+                    const roe_ = b.totalStockholdersEquity > 0
+                      ? ((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1)
+                      : "N/A";
                     const revG = prev ? yoy(q.revenue, prev.revenue) : null;
                     return (
                       <tr key={q.date} style={{ background: i % 2 === 0 ? "transparent" : "#ffffff08" }}>
                         <td style={s.td}>{q.date?.slice(0, 7)}</td>
-                        <td style={{ ...s.td, color: "#3b82f6" }}>{pct(q.grossProfitRatio)}</td>
+                        <td style={{ ...s.td, color: "#3b82f6" }}>
+                          {q.revenue > 0 ? ((q.grossProfit / q.revenue) * 100).toFixed(1) + "%" : "N/A"}
+                        </td>
                         <td style={{ ...s.td, color: q.netIncome >= 0 ? "#22c55e" : "#ef4444" }}>
                           {q.revenue > 0 ? ((q.netIncome / q.revenue) * 100).toFixed(1) + "%" : "N/A"}
                         </td>

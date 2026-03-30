@@ -1,0 +1,47 @@
+[33me1d80f6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m 快取層重構：本地用 in-memory，Vercel 用 Upstash
+[33m0889102[m 財報頁加強：關鍵指標卡片、YoY年增率、健康度指標、回購欄位
+[33m143fa6d[m 均線自由調整：支援 SMA/EMA 任意週期，最多 10 條
+[33m6c8e049[m 修正 TypeScript 型別錯誤
+[33m8c0c4d8[m 更新跑馬燈
+[33m9bc6e5e[m 更新排版
+[33mf5c0479[m fix: remove getRSI import
+[33m72fd4f2[m feat: add RS relative strength to overview API
+[33mef6823b[m add SPY MA technical analysis to market page
+[33md10a0b4[m switch to Yahoo Finance for market data and indices
+[33mac400fa[m fix market-data URL encoding for VIX symbols
+[33m911b6de[m revert AI route to stable version without technical indicators
+[33m588a636[m fix getRSI import error
+[33m5ab3c1e[m upgrade AI prompt: remove mock earnings call, add analyst perspective
+[33ma22604c[m add index quotes on homepage
+[33mad340e0[m fix VIX symbol URL encoding
+[33m0a64170[m upgrade AI analysis with technical indicators and analyst perspective
+[33m0bea345[m add market page entry button
+[33m92972bb[m add market analysis page
+[33m79ff3e3[m add chart settings memory
+[33m9c9c0be[m add bollinger bands and MA color picker
+[33m3690d23[m remove transcript button from financials
+[33m2053538[m remove transcript and translate api
+[33m26a1075[m remove transcripts page
+[33m4e2cec1[m fix padding style warning
+[33m315e646[m enhance AI analysis with earnings call simulation
+[33m94e38a7[m remove AI analysis from stock page
+[33m0b18652[m switch transcript API to Alpha Vantage
+[33m382310a[m update financials page with AI analysis
+[33m61e2250[m rename to 股海小徒弟
+[33m7b81e3f[m add transcripts page and move AI analysis to financials
+[33m4f227d4[m financials: tabbed layout with balance sheet, cashflow, key metrics
+[33m445f0fc[m remove AI transcript, keep news and margin chart
+[33m8b9e92e[m add news, margin trend chart, AI transcript
+[33m94aa79a[m fix date format, add MA lines and volume chart
+[33ma135c8c[m upgrade chart with MA/Volume/OBV/MACD
+[33mc59a412[m add indicators page and button
+[33m226fccf[m add financials page and button
+[33m567664d[m rename to 美股小徒弟
+[33me7aa953[m add Claude AI financial analysis
+[33m13e23e8[m fix back button
+[33m74540f0[m ignore ts errors in build
+[33mfc995a9[m add homepage and back button
+[33me91db54[m add stock page with candlestick chart
+[33m0410c7a[m fix FMP API routes
+[33mc37fb82[m add FMP API layer
+[33m10ee924[m first commit
