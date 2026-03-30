@@ -1,510 +1,517 @@
 ﻿"use client";
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
-} from "recharts";
+import { use, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
-type Period = "quarter" | "annual";
-type Tab = "income" | "balance" | "cashflow" | "metrics";
+const WATCHLIST_KEY = "watchlist-v1";
+const STORAGE_KEY   = "chart-settings-v2";
 
-const fmt  = (n: number) => n == null ? "N/A" : `$${(n / 1e9).toFixed(2)}B`;
-const pct  = (n: number) => n == null ? "N/A" : `${(n * 100).toFixed(1)}%`;
-const fmtM = (n: number) => n == null ? "N/A" : `$${(n / 1e6).toFixed(0)}M`;
+const LINE_COLORS = ["#f59e0b","#3b82f6","#22c55e","#ef4444","#a78bfa","#fb7185","#38bdf8","#fb923c","#34d399","#e879f9"];
 
-function yoy(curr: number, prev: number) {
-  if (!prev || prev === 0) return null;
-  return ((curr - prev) / Math.abs(prev)) * 100;
+const DEFAULT_LINES = [
+  { type: "SMA", period: 20,  color: "#f59e0b", visible: true },
+  { type: "SMA", period: 50,  color: "#3b82f6", visible: true },
+  { type: "SMA", period: 200, color: "#22c55e", visible: true },
+];
+
+type LineConfig = { type: "SMA" | "EMA"; period: number; color: string; visible: boolean; };
+type Tab = "overview" | "technical" | "financials";
+
+const RS_PERIODS = [
+  { label: "1 個月", key: "m1" },
+  { label: "3 個月", key: "m3" },
+  { label: "1 年",   key: "y1" },
+];
+
+function loadWatchlist(): string[] {
+  try { const r = localStorage.getItem(WATCHLIST_KEY); return r ? JSON.parse(r) : []; } catch { return []; }
+}
+function saveWatchlist(list: string[]) {
+  try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list)); } catch {}
+}
+function loadLines(): LineConfig[] {
+  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : DEFAULT_LINES; } catch { return DEFAULT_LINES; }
+}
+function saveLines(lines: LineConfig[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(lines)); } catch {}
 }
 
-function YoyBadge({ val }: { val: number | null }) {
-  if (val == null) return null;
-  const up = val >= 0;
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, marginLeft: 6,
-      background: up ? "#14532d" : "#450a0a",
-      color: up ? "#22c55e" : "#ef4444",
-    }}>
-      {up ? "+" : ""}{val.toFixed(1)}%
-    </span>
-  );
+function calcBollinger(candles: any[], period = 20, multiplier = 2) {
+  const closes = [...candles].reverse().map((c: any) => c.close);
+  const result: { time: string; upper: number; middle: number; lower: number }[] = [];
+  for (let i = period - 1; i < closes.length; i++) {
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((a: number, b: number) => a + b, 0) / period;
+    const std = Math.sqrt(slice.reduce((a: number, b: number) => a + (b - mean) ** 2, 0) / period);
+    result.push({
+      time: [...candles].reverse()[i].date.slice(0, 10),
+      upper:  +(mean + multiplier * std).toFixed(4),
+      middle: +mean.toFixed(4),
+      lower:  +(mean - multiplier * std).toFixed(4),
+    });
+  }
+  return result;
 }
 
-function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 16px", flex: 1, minWidth: 120 }}>
-      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: color ?? "#e2e8f0" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{sub}</div>}
-    </div>
-  );
+function calcRSFromCandles(stockCandles: any[], spyCandles: any[]) {
+  const stockCloses = [...stockCandles].reverse().map((c: any) => c.close);
+  const spyCloses   = [...spyCandles].reverse().map((c: any) => c.close);
+  const periods = [{ key: "m1", days: 21 }, { key: "m3", days: 63 }, { key: "y1", days: 252 }];
+  const result: Record<string, any> = {};
+  for (const { key, days } of periods) {
+    if (stockCloses.length < days + 1 || spyCloses.length < days + 1) {
+      result[key] = { stock: 0, spy: 0, diff: 0, label: "資料不足" }; continue;
+    }
+    const sLen = stockCloses.length, pLen = spyCloses.length;
+    const sRet = ((stockCloses[sLen-1] - stockCloses[sLen-1-days]) / stockCloses[sLen-1-days]) * 100;
+    const pRet = ((spyCloses[pLen-1]   - spyCloses[pLen-1-days])   / spyCloses[pLen-1-days])   * 100;
+    const diff = sRet - pRet;
+    const label = diff >= 10 ? "強勢★" : diff >= 3 ? "略強" : diff >= -3 ? "中立" : diff >= -10 ? "略弱" : "弱勢";
+    result[key] = { stock: +sRet.toFixed(2), spy: +pRet.toFixed(2), diff: +diff.toFixed(2), label };
+  }
+  return result;
 }
 
-export default function FinancialsPage() {
-  const { symbol } = useParams<{ symbol: string }>();
+const DATA_CARDS = (quote: any) => [
+  { label: "今日開盤", value: "$" + quote.open?.toFixed(2) },
+  { label: "昨日收盤", value: "$" + quote.previousClose?.toFixed(2) },
+  { label: "今日最高", value: "$" + quote.dayHigh?.toFixed(2) },
+  { label: "今日最低", value: "$" + quote.dayLow?.toFixed(2) },
+  { label: "成交量",   value: ((quote.volume ?? 0) / 1e6).toFixed(1) + "M" },
+  { label: "市值",     value: "$" + ((quote.marketCap ?? 0) / 1e12).toFixed(2) + "T" },
+];
+
+export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
+  const { symbol: raw } = use(params);
+  const symbol = raw.toUpperCase();
   const router = useRouter();
-  const [period, setPeriod] = useState<Period>("quarter");
-  const [tab, setTab] = useState<Tab>("income");
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [quote, setQuote] = useState<any>(null);
 
-  const [aiText, setAiText]       = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiDone, setAiDone]       = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [quote, setQuote]         = useState<any>(null);
+  const [candles, setCandles]     = useState<any[]>([]);
+  const [rs, setRs]               = useState<any>(null);
+  const [loading, setLoading]     = useState(true);
+
+  // 均線設定
+  const [lines, setLines]         = useState<LineConfig[]>(DEFAULT_LINES);
+  const [indicatorData, setIndicatorData] = useState<Record<string, any[]>>({});
+  const [indLoading, setIndLoading] = useState(false);
+
+  // 布林通道
+  const [showBB,   setShowBB]   = useState(false);
+  const [bbPeriod, setBbPeriod] = useState(20);
+  const [bbMult,   setBbMult]   = useState(2);
+
+  // 新增均線 UI
+  const [newType,   setNewType]   = useState<"SMA"|"EMA">("SMA");
+  const [newPeriod, setNewPeriod] = useState(10);
+
+  const [inWatchlist, setInWatchlist] = useState(false);
+  const [wlFeedback,  setWlFeedback]  = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const chartRef           = useRef<HTMLDivElement>(null);
+  const volumeContainerRef = useRef<HTMLDivElement>(null);
+  const maSeriesRef        = useRef<Record<string, any>>({});
+  const chartInstanceRef   = useRef<any>(null);
+  const volumeChartRef     = useRef<any>(null);
 
   useEffect(() => {
-    setLoading(true);
+    setLines(loadLines());
+    setInWatchlist(loadWatchlist().includes(symbol));
+  }, [symbol]);
+
+  // 抓個股基本資料
+  useEffect(() => {
     Promise.all([
-      fetch(`/api/stock/${symbol}?tab=financials&period=${period}`).then(r => r.json()),
-      fetch(`/api/stock/${symbol}?tab=overview`).then(r => r.json()),
-    ]).then(([fin, ov]) => {
-      setData(fin);
+      fetch("/api/stock/" + symbol + "?tab=overview").then(r => r.json()),
+      fetch("/api/stock/SPY?tab=overview").then(r => r.json()),
+    ]).then(([ov, spy]) => {
       setQuote(ov.quote);
+      const sc = ov.candles || [];
+      setCandles(sc);
+      if (ov.rs) { setRs(ov.rs); }
+      else {
+        const sp = spy.candles || [];
+        if (sc.length > 0 && sp.length > 0) setRs(calcRSFromCandles(sc, sp));
+      }
       setLoading(false);
     });
-  }, [symbol, period]);
+  }, [symbol]);
 
-  async function runAI() {
-    setAiLoading(true); setAiText(""); setAiDone(false);
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol }),
+  // 抓均線資料（lines 改變時重抓）
+  useEffect(() => {
+    if (lines.length === 0) return;
+    setIndLoading(true);
+    const linesParam = lines.map(l => `${l.type}-${l.period}`).join(",");
+    fetch(`/api/stock/${symbol}?tab=indicators&lines=${linesParam}`)
+      .then(r => r.json())
+      .then(d => { setIndicatorData(d.indicators ?? {}); setIndLoading(false); })
+      .catch(() => setIndLoading(false));
+  }, [symbol, lines]);
+
+  // 畫圖
+  useEffect(() => {
+    if (activeTab !== "technical") return;
+    if (!chartRef.current || candles.length === 0) return;
+
+    import("lightweight-charts").then((lc) => {
+      const w = chartRef.current?.parentElement?.clientWidth || 800;
+
+      if (chartInstanceRef.current) { try { chartInstanceRef.current.remove(); } catch {} chartInstanceRef.current = null; }
+      if (volumeChartRef.current)   { try { volumeChartRef.current.remove(); }   catch {} volumeChartRef.current = null; }
+      if (chartRef.current)           chartRef.current.innerHTML = "";
+      if (volumeContainerRef.current) volumeContainerRef.current.innerHTML = "";
+      maSeriesRef.current = {};
+
+      const chartOpts = (h: number) => ({
+        layout: { background: { type: lc.ColorType.Solid, color: "#0f172a" }, textColor: "#94a3b8" },
+        grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
+        width: w, height: h,
+        timeScale: { borderColor: "#334155" },
+        rightPriceScale: { borderColor: "#334155" },
       });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        setAiText(prev => prev + decoder.decode(value));
+
+      const formatted = [...candles].reverse().map((c: any) => ({
+        time: c.date.slice(0, 10), open: c.open, high: c.high, low: c.low, close: c.close,
+      }));
+
+      const mainChart = lc.createChart(chartRef.current!, chartOpts(480));
+      chartInstanceRef.current = mainChart;
+
+      mainChart.addSeries(lc.CandlestickSeries, {
+        upColor: "#22c55e", downColor: "#ef4444",
+        borderUpColor: "#22c55e", borderDownColor: "#ef4444",
+        wickUpColor: "#22c55e", wickDownColor: "#ef4444",
+      }).setData(formatted);
+
+      // 畫均線
+      lines.forEach(line => {
+        const key = `${line.type}-${line.period}`;
+        const raw = indicatorData[key] ?? [];
+        const fieldKey = line.type === "SMA" ? "sma" : "ema";
+        const d = [...raw].reverse()
+          .filter((p: any) => p[fieldKey] != null)
+          .map((p: any) => ({ time: p.date.slice(0, 10), value: p[fieldKey] }));
+        if (d.length === 0) return;
+        const series = mainChart.addSeries(lc.LineSeries, {
+          color: line.color, lineWidth: 1 as const,
+          priceLineVisible: false, lastValueVisible: false,
+          visible: line.visible,
+        });
+        series.setData(d);
+        maSeriesRef.current[key] = series;
+      });
+
+      // 布林通道
+      if (showBB && candles.length > bbPeriod) {
+        const bbData = calcBollinger(candles, bbPeriod, bbMult);
+        const bbStyle = { lineWidth: 1 as const, priceLineVisible: false, lastValueVisible: false };
+        const upper  = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
+        const middle = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa" });
+        const lower  = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
+        upper.setData(bbData.map(d => ({ time: d.time, value: d.upper })));
+        middle.setData(bbData.map(d => ({ time: d.time, value: d.middle })));
+        lower.setData(bbData.map(d => ({ time: d.time, value: d.lower })));
       }
-    } catch { setAiText("AI 分析失敗，請稍後再試"); }
-    setAiLoading(false); setAiDone(true);
+      mainChart.timeScale().fitContent();
+
+      const volChart = lc.createChart(volumeContainerRef.current!, chartOpts(100));
+      volumeChartRef.current = volChart;
+      volChart.addSeries(lc.HistogramSeries, {
+        priceFormat: { type: "volume" }, priceScaleId: "right",
+      }).setData([...candles].reverse().map((c: any) => ({
+        time: c.date.slice(0, 10), value: c.volume,
+        color: c.close >= c.open ? "#22c55e55" : "#ef444455",
+      })));
+      volChart.timeScale().fitContent();
+
+      mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => { if (range) volChart.timeScale().setVisibleLogicalRange(range); });
+      volChart.timeScale().subscribeVisibleLogicalRangeChange(range => { if (range) mainChart.timeScale().setVisibleLogicalRange(range); });
+    });
+  }, [activeTab, candles, indicatorData, showBB, bbPeriod, bbMult]);
+
+  function addLine() {
+    if (lines.length >= 10) return;
+    const key = `${newType}-${newPeriod}`;
+    if (lines.find(l => l.type === newType && l.period === newPeriod)) return;
+    const color = LINE_COLORS[lines.length % LINE_COLORS.length];
+    const next = [...lines, { type: newType, period: newPeriod, color, visible: true }];
+    setLines(next);
   }
 
-  const s = {
-    page:    { minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: "24px" },
-    card:    { background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 },
-    th:      { padding: "8px 12px", textAlign: "left" as const, color: "#64748b", borderBottom: "1px solid #334155", fontSize: 12 },
-    td:      { padding: "8px 12px", borderBottom: "1px solid #0f172a44", fontSize: 13 },
-    section: { fontSize: 14, fontWeight: 700, marginBottom: 14, color: "#94a3b8", letterSpacing: 0.5 },
-  };
+  function removeLine(idx: number) {
+    const next = lines.filter((_, i) => i !== idx);
+    setLines(next);
+  }
 
-  if (loading) return <div style={{ ...s.page, textAlign: "center", padding: "80px 24px", color: "#64748b" }}>載入中...</div>;
-  if (!data)   return <div style={{ ...s.page, textAlign: "center", padding: "80px 24px", color: "#ef4444" }}>資料取得失敗</div>;
+  function toggleVisible(idx: number) {
+    const next = lines.map((l, i) => i === idx ? { ...l, visible: !l.visible } : l);
+    setLines(next);
+    const key = `${lines[idx].type}-${lines[idx].period}`;
+    const series = maSeriesRef.current[key];
+    if (series) series.applyOptions({ visible: !lines[idx].visible });
+  }
 
-  const { income = [], balance = [], cashflow = [] } = data;
+  function changeColor(idx: number, color: string) {
+    const next = lines.map((l, i) => i === idx ? { ...l, color } : l);
+    setLines(next);
+  }
 
-  const incomeChart = [...income].reverse().map((q: any, i: number, arr: any[]) => {
-    const prev = arr[i - 4];
-    return {
-      date: q.date?.slice(0, 7),
-      營收: +(q.revenue / 1e9).toFixed(2),
-      毛利: +(q.grossProfit / 1e9).toFixed(2),
-      淨利: +(q.netIncome / 1e9).toFixed(2),
-      營收YoY: prev ? yoy(q.revenue, prev.revenue) : null,
-    };
-  });
+  function handleSave() {
+    saveLines(lines);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
+  }
 
-  const epsChart = [...income].reverse().map((q: any, i: number, arr: any[]) => {
-    const prev = arr[i - 4];
-    return {
-      date: q.date?.slice(0, 7),
-      EPS: q.eps,
-      EPS年增: prev ? yoy(q.eps, prev.eps) : null,
-    };
-  });
+  function handleReset() {
+    setLines(DEFAULT_LINES);
+    localStorage.removeItem(STORAGE_KEY);
+  }
 
-  const balanceChart = [...balance].reverse().map((q: any) => ({
-    date: q.date?.slice(0, 7),
-    總資產: +(q.totalAssets / 1e9).toFixed(2),
-    總負債: +(q.totalLiabilities / 1e9).toFixed(2),
-    股東權益: +(q.totalStockholdersEquity / 1e9).toFixed(2),
-  }));
+  function toggleWatchlist() {
+    const list = loadWatchlist();
+    let next: string[];
+    if (list.includes(symbol)) {
+      next = list.filter(s => s !== symbol); setInWatchlist(false); setWlFeedback("已移除");
+    } else {
+      next = [...list, symbol]; setInWatchlist(true); setWlFeedback("已加入 ⭐");
+    }
+    saveWatchlist(next); setTimeout(() => setWlFeedback(""), 2000);
+  }
 
-  const cfChart = [...cashflow].reverse().map((q: any) => ({
-    date: q.date?.slice(0, 7),
-    營業現金流: +(q.operatingCashFlow / 1e9).toFixed(2),
-    自由現金流: +(q.freeCashFlow / 1e9).toFixed(2),
-    資本支出: q.capitalExpenditure ? +(q.capitalExpenditure / 1e9).toFixed(2) : 0,
-  }));
-
-  const metricsChart = income.slice(0, 8).reverse().map((q: any, i: number) => {
-    const b = balance[balance.length - 1 - i];
-    return {
-      date: q.date?.slice(0, 7),
-      毛利率: q.revenue > 0 ? +((q.grossProfit / q.revenue) * 100).toFixed(1) : 0,
-      淨利率: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
-      ROE: b?.totalStockholdersEquity > 0 ? +((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1) : 0,
-      營業利益率: q.operatingIncomeRatio ? +(q.operatingIncomeRatio * 100).toFixed(1) : 0,
-    };
-  });
-
-  const latestIncome  = income[0]  ?? {};
-  const latestBalance = balance[0] ?? {};
-  const latestCF      = cashflow[0] ?? {};
-  const prevIncome    = income[4]   ?? {};
-
-  const grossMargin  = latestIncome.revenue > 0
-    ? ((latestIncome.grossProfit / latestIncome.revenue) * 100).toFixed(1) + "%"
-    : "N/A";
-  const netMargin    = latestIncome.revenue > 0
-    ? ((latestIncome.netIncome / latestIncome.revenue) * 100).toFixed(1) + "%"
-    : "N/A";
-  const roe          = latestBalance.totalStockholdersEquity > 0
-    ? ((latestIncome.netIncome / latestBalance.totalStockholdersEquity) * 100).toFixed(1) + "%"
-    : "N/A";
-  const debtToEquity = latestBalance.totalStockholdersEquity > 0
-    ? (latestBalance.totalDebt / latestBalance.totalStockholdersEquity).toFixed(2)
-    : "N/A";
-  const currentRatio = latestBalance.totalCurrentLiabilities > 0
-    ? (latestBalance.totalCurrentAssets / latestBalance.totalCurrentLiabilities).toFixed(2)
-    : "N/A";
-  const fcfMargin    = latestIncome.revenue > 0
-    ? ((latestCF.freeCashFlow / latestIncome.revenue) * 100).toFixed(1) + "%"
-    : "N/A";
-  const revenueGrowth = yoy(latestIncome.revenue, prevIncome.revenue);
-  const epsGrowth     = yoy(latestIncome.eps, prevIncome.eps);
-
-  // ✅ TTM P/E：用最近四季 EPS 總和自行計算
-  const ttmEps = income.slice(0, 4).reduce((sum: number, q: any) => sum + (q.eps ?? 0), 0);
-  const pe = (ttmEps > 0 && quote?.price)
-    ? (quote.price / ttmEps).toFixed(1)
-    : "N/A";
-
-  const tooltipStyle = { contentStyle: { background: "#1e293b", border: "none", color: "#e2e8f0", fontSize: 12 } };
+  const up = quote && quote.change >= 0;
 
   return (
-    <div style={s.page}>
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui" }}>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
-        <button onClick={() => router.push(`/stock/${symbol}`)} style={{
-          background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
-          padding: "8px 16px", color: "#94a3b8", cursor: "pointer", fontSize: 13, fontWeight: 600,
-        }}>← 返回</button>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{symbol} 財務報表</div>
-          {quote?.name && <div style={{ fontSize: 13, color: "#64748b" }}>{quote.name}</div>}
-        </div>
-      </div>
-
-      {/* 關鍵指標快覽 */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
-        <MetricCard label="本益比 P/E (TTM)" value={pe} sub="近四季EPS計算" />
-        <MetricCard label="毛利率" value={grossMargin} sub={`淨利率 ${netMargin}`} color="#22c55e" />
-        <MetricCard label="ROE" value={roe} sub="股東權益報酬" color="#3b82f6" />
-        <MetricCard label="負債權益比" value={debtToEquity} sub={`流動比率 ${currentRatio}`} color={parseFloat(debtToEquity) > 2 ? "#ef4444" : "#e2e8f0"} />
-        <MetricCard label="FCF Margin" value={fcfMargin} sub="自由現金流率" color="#f59e0b" />
-        <MetricCard
-          label="營收年增率"
-          value={revenueGrowth != null ? `${revenueGrowth >= 0 ? "+" : ""}${revenueGrowth.toFixed(1)}%` : "N/A"}
-          sub={`EPS年增 ${epsGrowth != null ? (epsGrowth >= 0 ? "+" : "") + epsGrowth.toFixed(1) + "%" : "N/A"}`}
-          color={revenueGrowth != null && revenueGrowth >= 0 ? "#22c55e" : "#ef4444"}
-        />
-      </div>
-
-      {/* 季/年切換 */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {(["quarter", "annual"] as Period[]).map(p => (
-          <button key={p} onClick={() => setPeriod(p)} style={{
-            background: period === p ? "#3b82f6" : "#1e293b",
-            border: `1px solid ${period === p ? "#3b82f6" : "#334155"}`,
-            borderRadius: 8, padding: "6px 16px",
-            color: period === p ? "#fff" : "#94a3b8",
-            cursor: "pointer", fontSize: 13, fontWeight: period === p ? 700 : 400,
-          }}>{p === "quarter" ? "季報" : "年報"}</button>
-        ))}
-      </div>
-
-      {/* Tab 列 */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #334155" }}>
-        {([
-          { key: "income",   label: "📋 損益表" },
-          { key: "balance",  label: "🏦 資產負債" },
-          { key: "cashflow", label: "💰 現金流" },
-          { key: "metrics",  label: "📊 獲利能力" },
-        ] as { key: Tab; label: string }[]).map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            background: "none", border: "none", cursor: "pointer",
-            padding: "10px 18px", fontSize: 13, fontWeight: 600,
-            color: tab === t.key ? "#3b82f6" : "#475569",
-            borderBottom: `2px solid ${tab === t.key ? "#3b82f6" : "transparent"}`,
-            marginBottom: -1,
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      {/* 損益表 */}
-      {tab === "income" && (
-        <>
-          <div style={s.card}>
-            <div style={s.section}>🧠 AI 深度研究報告</div>
-            {!aiDone && (
-              <button onClick={runAI} disabled={aiLoading} style={{
-                background: aiLoading ? "#334155" : "#7c3aed", color: "#fff", border: "none",
-                borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 700,
-                cursor: aiLoading ? "not-allowed" : "pointer", marginBottom: 12,
+      {/* 頂部 sticky 報價列 */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 40,
+        background: "#0d1117", borderBottom: "1px solid #1e293b",
+        padding: "0 24px", display: "flex", alignItems: "center", gap: 16, height: 52,
+      }}>
+        <button onClick={() => router.back()}
+          style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 13, cursor: "pointer", padding: 0, fontWeight: 600 }}>
+          ← 返回
+        </button>
+        {quote && !loading && (
+          <>
+            <div style={{ width: 1, height: 20, background: "#334155" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{symbol}</span>
+              <span style={{ fontSize: 13, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{quote.name}</span>
+              <span style={{ fontSize: 15, fontWeight: 800, marginLeft: 8 }}>${quote.price?.toFixed(2)}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
+                {up ? "+" : ""}{quote.change?.toFixed(2)} ({quote.changePercentage?.toFixed(2)}%)
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+              {wlFeedback && <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>{wlFeedback}</span>}
+              <button onClick={toggleWatchlist} style={{
+                background: inWatchlist ? "#f59e0b22" : "#1e293b",
+                border: `1px solid ${inWatchlist ? "#f59e0b" : "#334155"}`,
+                color: inWatchlist ? "#f59e0b" : "#94a3b8",
+                borderRadius: 7, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer",
               }}>
-                {aiLoading ? "分析中，請稍候..." : "🧠 一鍵 AI 深度研究"}
+                {inWatchlist ? "⭐ 已加入" : "☆ 自選股"}
               </button>
-            )}
-            {aiText && (
-              <div style={{
-                background: "#0f172a", borderRadius: 10, padding: 18,
-                fontSize: 14, lineHeight: 2, color: "#cbd5e1", whiteSpace: "pre-wrap",
-              }}>{aiText}</div>
-            )}
-          </div>
-
-          <div style={s.card}>
-            <div style={s.section}>營收 / 毛利 / 淨利（十億美元）</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={incomeChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip {...tooltipStyle} />
-                <Legend />
-                <Bar dataKey="營收" fill="#3b82f6" radius={[3,3,0,0]} />
-                <Bar dataKey="毛利" fill="#10b981" radius={[3,3,0,0]} />
-                <Bar dataKey="淨利" fill="#f59e0b" radius={[3,3,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.section}>每股盈餘 EPS 趨勢</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={epsChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip {...tooltipStyle} />
-                <ReferenceLine y={0} stroke="#475569" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="EPS" stroke="#a78bfa" strokeWidth={2} dot={{ r: 4, fill: "#a78bfa" }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.section}>損益表數據</div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: "#0f172a" }}>
-                    {["日期","營收","YoY","毛利","毛利率","營業利益","淨利","EPS","EBITDA"].map(h => (
-                      <th key={h} style={s.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {income.map((q: any, i: number) => {
-                    const prev = income[i + 4];
-                    const revGrowth = prev ? yoy(q.revenue, prev.revenue) : null;
-                    return (
-                      <tr key={q.date} style={{ background: i % 2 === 0 ? "transparent" : "#ffffff08" }}>
-                        <td style={s.td}>{q.date?.slice(0, 7)}</td>
-                        <td style={s.td}>{fmt(q.revenue)}</td>
-                        <td style={s.td}><YoyBadge val={revGrowth} /></td>
-                        <td style={s.td}>{fmt(q.grossProfit)}</td>
-                        <td style={s.td}>{q.revenue > 0 ? ((q.grossProfit / q.revenue) * 100).toFixed(1) + "%" : "N/A"}</td>
-                        <td style={s.td}>{fmt(q.operatingIncome)}</td>
-                        <td style={{ ...s.td, color: q.netIncome >= 0 ? "#22c55e" : "#ef4444", fontWeight: 700 }}>{fmt(q.netIncome)}</td>
-                        <td style={{ ...s.td, fontWeight: 700 }}>${q.eps?.toFixed(2)}</td>
-                        <td style={s.td}>{fmt(q.ebitda)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
 
-      {/* 資產負債 */}
-      {tab === "balance" && (
-        <>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-            <MetricCard label="流動比率" value={currentRatio} sub="≥1.5 較健康" color={parseFloat(currentRatio) >= 1.5 ? "#22c55e" : "#ef4444"} />
-            <MetricCard label="負債權益比" value={debtToEquity} sub="越低越穩健" color={parseFloat(debtToEquity) > 2 ? "#ef4444" : "#22c55e"} />
-            <MetricCard label="總資產" value={fmt(latestBalance.totalAssets)} sub={`總負債 ${fmt(latestBalance.totalLiabilities)}`} />
-            <MetricCard label="現金 & 約當現金" value={fmt(latestBalance.cashAndCashEquivalents)} sub="手頭現金" color="#3b82f6" />
-          </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 80, color: "#64748b", fontSize: 18 }}>載入中...</div>
+      ) : !quote ? (
+        <div style={{ textAlign: "center", padding: 80, color: "#ef4444" }}>找不到股票資料</div>
+      ) : (
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px" }}>
 
-          <div style={s.card}>
-            <div style={s.section}>資產 / 負債 / 股東權益（十億美元）</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={balanceChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip {...tooltipStyle} />
-                <Legend />
-                <Bar dataKey="總資產"   fill="#3b82f6" radius={[3,3,0,0]} />
-                <Bar dataKey="總負債"   fill="#ef4444" radius={[3,3,0,0]} />
-                <Bar dataKey="股東權益" fill="#10b981" radius={[3,3,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          {/* Tab 列 */}
+          <div style={{ display: "flex", borderBottom: "1px solid #1e293b", marginBottom: 28, gap: 4 }}>
+            {([ ["overview", "📋 概覽"], ["technical", "📈 技術指標"], ["financials", "📊 財報"] ] as [Tab, string][]).map(([key, label]) => (
+              <button key={key} onClick={() => setActiveTab(key as Tab)} style={{
+                background: "none", border: "none", cursor: "pointer",
+                padding: "10px 20px", fontSize: 14, fontWeight: 600,
+                color: activeTab === key ? "#3b82f6" : "#475569",
+                borderBottom: `2px solid ${activeTab === key ? "#3b82f6" : "transparent"}`,
+                marginBottom: -1,
+              }}>{label}</button>
+            ))}
           </div>
 
-          <div style={s.card}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: "#0f172a" }}>
-                    {["日期","總資產","總負債","股東權益","現金","總債務","流動資產","流動負債"].map(h => (
-                      <th key={h} style={s.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {balance.map((q: any, i: number) => (
-                    <tr key={q.date} style={{ background: i % 2 === 0 ? "transparent" : "#ffffff08" }}>
-                      <td style={s.td}>{q.date?.slice(0, 7)}</td>
-                      <td style={s.td}>{fmt(q.totalAssets)}</td>
-                      <td style={s.td}>{fmt(q.totalLiabilities)}</td>
-                      <td style={{ ...s.td, color: "#22c55e" }}>{fmt(q.totalStockholdersEquity)}</td>
-                      <td style={s.td}>{fmt(q.cashAndCashEquivalents)}</td>
-                      <td style={{ ...s.td, color: "#ef4444" }}>{fmt(q.totalDebt)}</td>
-                      <td style={s.td}>{fmt(q.totalCurrentAssets)}</td>
-                      <td style={s.td}>{fmt(q.totalCurrentLiabilities)}</td>
-                    </tr>
+          {/* ── 概覽 Tab ── */}
+          {activeTab === "overview" && (
+            <div>
+              {/* 數據卡片 */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 28 }}>
+                {DATA_CARDS(quote).map(card => (
+                  <div key={card.label} style={{ background: "#1e293b", borderRadius: 10, padding: "14px 18px" }}>
+                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{card.label}</div>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>{card.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* RS 相對強度 */}
+              {rs && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#475569", fontWeight: 700, letterSpacing: 1.5, marginBottom: 12 }}>
+                    📈 RS 相對強度 vs SPY
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+                    {RS_PERIODS.map(({ label, key }) => {
+                      const data = rs[key];
+                      if (!data) return null;
+                      const pos = data.diff >= 0;
+                      const color = pos ? "#22c55e" : "#ef4444";
+                      return (
+                        <div key={key} style={{
+                          background: "#1e293b", borderRadius: 12, padding: "20px 16px", textAlign: "center",
+                          border: `1px solid ${pos ? "#14532d" : "#450a0a"}`,
+                        }}>
+                          <div style={{ fontSize: 11, color: "#475569", marginBottom: 10, fontWeight: 700, letterSpacing: 1 }}>{label}</div>
+                          <div style={{ fontSize: 32, fontWeight: 900, color, marginBottom: 6, letterSpacing: -1 }}>
+                            {pos ? "+" : ""}{data.diff}%
+                          </div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10, lineHeight: 1.6 }}>
+                            本股 {data.stock >= 0 ? "+" : ""}{data.stock}%<br />
+                            SPY {data.spy >= 0 ? "+" : ""}{data.spy}%
+                          </div>
+                          <div style={{
+                            display: "inline-block", fontSize: 11, fontWeight: 700,
+                            padding: "4px 14px", borderRadius: 20,
+                            background: pos ? "#14532d" : "#450a0a", color,
+                          }}>{data.label}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── 技術指標 Tab ── */}
+          {activeTab === "technical" && (
+            <div>
+              <div style={{ background: "#1e293b", borderRadius: 10, padding: "16px 20px", marginBottom: 16 }}>
+
+                {/* 新增均線 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 11, color: "#475569", fontWeight: 700, letterSpacing: 1.5, marginRight: 4 }}>新增均線</div>
+                  <select value={newType} onChange={e => setNewType(e.target.value as "SMA"|"EMA")}
+                    style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>
+                    <option value="SMA">SMA</option>
+                    <option value="EMA">EMA</option>
+                  </select>
+                  <input type="number" value={newPeriod} min={1} max={500}
+                    onChange={e => setNewPeriod(Number(e.target.value))}
+                    style={{ width: 60, background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", padding: "5px 8px", fontSize: 12 }}
+                  />
+                  <button onClick={addLine} disabled={lines.length >= 10} style={{
+                    background: lines.length >= 10 ? "#1e293b" : "#3b82f6",
+                    color: lines.length >= 10 ? "#475569" : "#fff",
+                    border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: lines.length >= 10 ? "not-allowed" : "pointer",
+                  }}>+ 新增 {lines.length >= 10 && "(已達上限)"}</button>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+                    {indLoading && <span style={{ fontSize: 11, color: "#475569" }}>載入中...</span>}
+                    {saved && <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>✓ 已儲存</span>}
+                    <button onClick={handleSave}
+                      style={{ background: "#0f172a", border: "1px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>
+                      💾 儲存設定
+                    </button>
+                    <button onClick={handleReset}
+                      style={{ background: "none", border: "none", color: "#475569", fontSize: 12, cursor: "pointer" }}>
+                      重置
+                    </button>
+                  </div>
+                </div>
+
+                {/* 均線清單 */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {lines.map((line, idx) => (
+                    <div key={idx} style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      background: "#0f172a", borderRadius: 8, padding: "5px 10px",
+                      border: `1px solid ${line.visible ? line.color + "66" : "#334155"}`,
+                    }}>
+                      <button onClick={() => toggleVisible(idx)} style={{
+                        background: line.visible ? line.color + "33" : "transparent",
+                        border: `1px solid ${line.visible ? line.color : "#334155"}`,
+                        color: line.visible ? line.color : "#475569",
+                        borderRadius: 5, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      }}>
+                        {line.type} {line.period}
+                      </button>
+                      <input type="color" value={line.color}
+                        onChange={e => changeColor(idx, e.target.value)}
+                        style={{ width: 20, height: 20, border: "none", borderRadius: 3, cursor: "pointer", background: "none", padding: 0 }}
+                      />
+                      <button onClick={() => removeLine(idx)} style={{
+                        background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1,
+                      }}>×</button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                  {lines.length === 0 && (
+                    <div style={{ fontSize: 12, color: "#334155" }}>尚無均線，點上方新增</div>
+                  )}
+                </div>
+
+                {/* 布林通道 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+                  <button onClick={() => setShowBB(p => !p)} style={{
+                    background: showBB ? "#60a5fa33" : "#0f172a",
+                    border: `1px solid ${showBB ? "#60a5fa" : "#334155"}`,
+                    color: showBB ? "#60a5fa" : "#64748b",
+                    borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  }}>布林通道</button>
+                  {showBB && (
+                    <>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                        週期
+                        <input type="number" value={bbPeriod} min={5} max={50} onChange={e => setBbPeriod(Number(e.target.value))}
+                          style={{ width: 50, background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", padding: "3px 8px", fontSize: 12 }} />
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                        倍數
+                        <input type="number" value={bbMult} min={1} max={4} step={0.5} onChange={e => setBbMult(Number(e.target.value))}
+                          style={{ width: 50, background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", padding: "3px 8px", fontSize: 12 }} />
+                      </label>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* 圖表 */}
+              <div style={{ background: "#1e293b", borderRadius: "12px 12px 0 0", padding: "14px 16px", marginBottom: 2 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#64748b" }}>K 線 + 均線</div>
+                <div ref={chartRef} />
+              </div>
+              <div style={{ background: "#1e293b", borderRadius: "0 0 12px 12px", padding: "8px 16px" }}>
+                <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>成交量</div>
+                <div ref={volumeContainerRef} />
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          )}
 
-      {/* 現金流 */}
-      {tab === "cashflow" && (
-        <>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-            <MetricCard label="最新營業現金流" value={fmt(latestCF.operatingCashFlow)} sub="核心獲利品質" color="#3b82f6" />
-            <MetricCard label="最新自由現金流" value={fmt(latestCF.freeCashFlow)} sub="可分配給股東" color={latestCF.freeCashFlow >= 0 ? "#22c55e" : "#ef4444"} />
-            <MetricCard label="資本支出" value={fmt(latestCF.capitalExpenditure)} sub="再投資規模" color="#f59e0b" />
-            <MetricCard label="FCF Margin" value={fcfMargin} sub="自由現金流率" />
-          </div>
-
-          <div style={s.card}>
-            <div style={s.section}>現金流量（十億美元）</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={cfChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip {...tooltipStyle} />
-                <Legend />
-                <ReferenceLine y={0} stroke="#475569" />
-                <Bar dataKey="營業現金流" fill="#3b82f6" radius={[3,3,0,0]} />
-                <Bar dataKey="自由現金流" fill="#10b981" radius={[3,3,0,0]} />
-                <Bar dataKey="資本支出"   fill="#f59e0b" radius={[3,3,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div style={s.card}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: "#0f172a" }}>
-                    {["日期","營業現金流","自由現金流","資本支出","股利支付","股票回購"].map(h => (
-                      <th key={h} style={s.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {cashflow.map((q: any, i: number) => (
-                    <tr key={q.date} style={{ background: i % 2 === 0 ? "transparent" : "#ffffff08" }}>
-                      <td style={s.td}>{q.date?.slice(0, 7)}</td>
-                      <td style={{ ...s.td, color: "#3b82f6", fontWeight: 700 }}>{fmt(q.operatingCashFlow)}</td>
-                      <td style={{ ...s.td, color: q.freeCashFlow >= 0 ? "#22c55e" : "#ef4444", fontWeight: 700 }}>{fmt(q.freeCashFlow)}</td>
-                      <td style={s.td}>{fmt(q.capitalExpenditure)}</td>
-                      <td style={s.td}>{q.dividendsPaid ? fmtM(Math.abs(q.dividendsPaid)) : "—"}</td>
-                      <td style={s.td}>{q.commonStockRepurchased ? fmtM(Math.abs(q.commonStockRepurchased)) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* ── 財報 Tab ── */}
+          {activeTab === "financials" && (
+            <div style={{ textAlign: "center", paddingTop: 60 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>財報頁面</div>
+              <div style={{ fontSize: 14, color: "#64748b", marginBottom: 28 }}>
+                查看 {symbol} 的 EPS、營收、現金流與 AI 財報解讀
+              </div>
+              <button onClick={() => router.push("/stock/" + symbol + "/financials")} style={{
+                background: "#3b82f6", color: "#fff", border: "none",
+                borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer",
+              }}>
+                前往財報頁面 →
+              </button>
             </div>
-          </div>
-        </>
-      )}
+          )}
 
-      {/* 獲利能力 */}
-      {tab === "metrics" && (
-        <>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-            <MetricCard label="毛利率" value={grossMargin} color="#3b82f6" />
-            <MetricCard label="淨利率" value={netMargin} color="#10b981" />
-            <MetricCard label="ROE" value={roe} sub="股東權益報酬率" color="#f59e0b" />
-            <MetricCard label="FCF Margin" value={fcfMargin} color="#a78bfa" />
-          </div>
-
-          <div style={s.card}>
-            <div style={s.section}>獲利能力趨勢（%）</div>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={metricsChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} unit="%" />
-                <Tooltip {...tooltipStyle} formatter={(v: any) => v + "%"} />
-                <Legend />
-                <ReferenceLine y={0} stroke="#475569" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="毛利率"    stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="淨利率"    stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="ROE"       stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="營業利益率" stroke="#a78bfa" strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.section}>逐期指標對照</div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: "#0f172a" }}>
-                    {["日期","毛利率","淨利率","營業利益率","ROE","EPS","營收YoY"].map(h => (
-                      <th key={h} style={s.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {income.map((q: any, i: number) => {
-                    const b = balance[i] ?? {};
-                    const prev = income[i + 4];
-                    const roe_ = b.totalStockholdersEquity > 0
-                      ? ((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1)
-                      : "N/A";
-                    const revG = prev ? yoy(q.revenue, prev.revenue) : null;
-                    return (
-                      <tr key={q.date} style={{ background: i % 2 === 0 ? "transparent" : "#ffffff08" }}>
-                        <td style={s.td}>{q.date?.slice(0, 7)}</td>
-                        <td style={{ ...s.td, color: "#3b82f6" }}>
-                          {q.revenue > 0 ? ((q.grossProfit / q.revenue) * 100).toFixed(1) + "%" : "N/A"}
-                        </td>
-                        <td style={{ ...s.td, color: q.netIncome >= 0 ? "#22c55e" : "#ef4444" }}>
-                          {q.revenue > 0 ? ((q.netIncome / q.revenue) * 100).toFixed(1) + "%" : "N/A"}
-                        </td>
-                        <td style={s.td}>{q.operatingIncomeRatio ? (q.operatingIncomeRatio * 100).toFixed(1) + "%" : "N/A"}</td>
-                        <td style={{ ...s.td, color: "#f59e0b" }}>{roe_}%</td>
-                        <td style={{ ...s.td, fontWeight: 700 }}>${q.eps?.toFixed(2)}</td>
-                        <td style={s.td}><YoyBadge val={revG} /></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

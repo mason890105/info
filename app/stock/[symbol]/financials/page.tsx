@@ -51,9 +51,9 @@ export default function FinancialsPage() {
   const [loading, setLoading] = useState(true);
   const [quote, setQuote] = useState<any>(null);
 
-  const [aiText, setAiText] = useState("");
+  const [aiText, setAiText]       = useState("");
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiDone, setAiDone] = useState(false);
+  const [aiDone, setAiDone]       = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -75,8 +75,13 @@ export default function FinancialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol }),
       });
-      const json = await res.json();
-      setAiText(json.analysis || json.error || "無法取得分析結果");
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        setAiText(prev => prev + decoder.decode(value));
+      }
     } catch { setAiText("AI 分析失敗，請稍後再試"); }
     setAiLoading(false); setAiDone(true);
   }
@@ -177,7 +182,7 @@ export default function FinancialsPage() {
     <div style={s.page}>
 
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
-        <button onClick={() => router.push(`/stock/${symbol}`)} style={{
+        <button onClick={() => router.back()} style={{
           background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
           padding: "8px 16px", color: "#94a3b8", cursor: "pointer", fontSize: 13, fontWeight: 600,
         }}>← 返回</button>
@@ -237,14 +242,14 @@ export default function FinancialsPage() {
       {tab === "income" && (
         <>
           <div style={s.card}>
-            <div style={s.section}>🤖 AI 財報解讀</div>
+            <div style={s.section}>🧠 AI 深度研究報告</div>
             {!aiDone && (
               <button onClick={runAI} disabled={aiLoading} style={{
                 background: aiLoading ? "#334155" : "#7c3aed", color: "#fff", border: "none",
                 borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 700,
                 cursor: aiLoading ? "not-allowed" : "pointer", marginBottom: 12,
               }}>
-                {aiLoading ? "Claude 分析中..." : "✨ 一鍵 AI 財報分析"}
+                {aiLoading ? "分析中，請稍候..." : "🧠 一鍵 AI 深度研究"}
               </button>
             )}
             {aiText && (
