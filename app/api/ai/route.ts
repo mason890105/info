@@ -1,16 +1,15 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { getIncomeStatements, getBalanceSheets, getCashFlows, getRSI, getSMA, getQuote } from "@/lib/fmp";
+import { getIncomeStatements, getBalanceSheets, getCashFlows, getSMA, getQuote } from "@/lib/fmp";
 
 export async function POST(req: NextRequest) {
   try {
     const { symbol } = await req.json();
     if (!symbol) return NextResponse.json({ error: "需要股票代號" }, { status: 400 });
 
-    const [income, balance, cashflow, rsiData, sma50Data, sma200Data, quote] = await Promise.all([
+    const [income, balance, cashflow, sma50Data, sma200Data, quote] = await Promise.all([
       getIncomeStatements(symbol, "quarter", 5),
       getBalanceSheets(symbol, "quarter", 4),
       getCashFlows(symbol, "quarter", 4),
-      getRSI(symbol, 14, 5),
       getSMA(symbol, 50, 5),
       getSMA(symbol, 200, 5),
       getQuote(symbol),
