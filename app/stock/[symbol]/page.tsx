@@ -20,8 +20,6 @@ export default function StockPage({ params }) {
   const [candles, setCandles] = useState([]);
   const [indicators, setIndicators] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [analysis, setAnalysis] = useState("");
-  const [analysing, setAnalysing] = useState(false);
   const [activeMA, setActiveMA] = useState(
     Object.fromEntries(MA_CONFIG.map(m => [m.key, m.default]))
   );
@@ -127,23 +125,6 @@ export default function StockPage({ params }) {
     if (series) series.applyOptions({ visible: next });
   }
 
-  async function getAnalysis() {
-    setAnalysing(true);
-    setAnalysis("");
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol }),
-      });
-      const data = await res.json();
-      setAnalysis(data.analysis || data.error || "分析失敗");
-    } catch {
-      setAnalysis("分析失敗，請稍後再試");
-    }
-    setAnalysing(false);
-  }
-
   const up = quote && quote.change >= 0;
 
   return (
@@ -208,24 +189,6 @@ export default function StockPage({ params }) {
           <div style={{ background: "#1e293b", borderRadius: "0 0 12px 12px", padding: "8px 16px", marginBottom: 24 }}>
             <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>成交量</div>
             <div ref={volumeContainerRef} />
-          </div>
-
-          <div style={{ background: "#1e293b", borderRadius: 12, padding: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>🤖 AI 財報解讀</div>
-                <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>由 Claude AI 分析最近4季財報</div>
-              </div>
-              <button onClick={getAnalysis} disabled={analysing}
-                style={{ background: analysing ? "#334155" : "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: analysing ? "not-allowed" : "pointer" }}>
-                {analysing ? "分析中..." : "開始分析"}
-              </button>
-            </div>
-            {analysis && (
-              <div style={{ fontSize: 14, lineHeight: 1.8, color: "#cbd5e1", whiteSpace: "pre-wrap", borderTop: "1px solid #334155", paddingTop: 16 }}>
-                {analysis}
-              </div>
-            )}
           </div>
         </>
       ) : (
