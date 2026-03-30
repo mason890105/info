@@ -3,13 +3,30 @@ import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const MA_CONFIG = [
-  { key: "sma10",  label: "MA10",  color: "#f59e0b",  default: true },
-  { key: "sma20",  label: "MA20",  color: "#3b82f6",  default: true },
-  { key: "sma50",  label: "MA50",  color: "#22c55e",  default: true },
-  { key: "sma200", label: "MA200", color: "#ef4444",  default: true },
-  { key: "ema8",   label: "EMA8",  color: "#a78bfa",  default: true },
-  { key: "ema21",  label: "EMA21", color: "#fb7185",  default: true },
+  { key: "sma10",  label: "MA10",  defaultColor: "#f59e0b" },
+  { key: "sma20",  label: "MA20",  defaultColor: "#3b82f6" },
+  { key: "sma50",  label: "MA50",  defaultColor: "#22c55e" },
+  { key: "sma200", label: "MA200", defaultColor: "#ef4444" },
+  { key: "ema8",   label: "EMA8",  defaultColor: "#a78bfa" },
+  { key: "ema21",  label: "EMA21", defaultColor: "#fb7185" },
 ];
+
+function calcBollinger(candles: any[], period = 20, multiplier = 2) {
+  const closes = [...candles].reverse().map(c => c.close);
+  const result: { time: string; upper: number; middle: number; lower: number }[] = [];
+  for (let i = period - 1; i < closes.length; i++) {
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const std = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period);
+    result.push({
+      time: [...candles].reverse()[i].date.slice(0, 10),
+      upper: +(mean + multiplier * std).toFixed(4),
+      middle: +mean.toFixed(4),
+      lower: +(mean - multiplier * std).toFixed(4),
+    });
+  }
+  return result;
+}
 
 export default function StockPage({ params }) {
   const { symbol: raw } = use(params);
@@ -20,12 +37,20 @@ export default function StockPage({ params }) {
   const [candles, setCandles] = useState([]);
   const [indicators, setIndicators] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const [activeMA, setActiveMA] = useState(
-    Object.fromEntries(MA_CONFIG.map(m => [m.key, m.default]))
+    Object.fromEntries(MA_CONFIG.map(m => [m.key, true]))
   );
+  const [maColors, setMaColors] = useState(
+    Object.fromEntries(MA_CONFIG.map(m => [m.key, m.defaultColor]))
+  );
+  const [showBB, setShowBB] = useState(false);
+  const [bbPeriod, setBbPeriod] = useState(20);
+  const [bbMult, setBbMult] = useState(2);
 
   const chartRef = useRef(null);
   const maSeriesRef = useRef({});
+  const bbSeriesRef = useRef<any[]>([]);
   const volumeChartRef = useRef(null);
   const chartInstanceRef = useRef(null);
   const volumeContainerRef = useRef(null);
@@ -53,6 +78,9 @@ export default function StockPage({ params }) {
       if (chartRef.current) chartRef.current.innerHTML = "";
       if (volumeContainerRef.current) volumeContainerRef.current.innerHTML = "";
 
+      maSeriesRef.current = {};
+      bbSeriesRef.current = [];
+
       const chartOpts = (h) => ({
         layout: { background: { type: lc.ColorType.Solid, color: "#0f172a" }, textColor: "#94a3b8" },
         grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
@@ -68,6 +96,7 @@ export default function StockPage({ params }) {
 
       const mainChart = lc.createChart(chartRef.current, chartOpts(420));
       chartInstanceRef.current = mainChart;
+
       const candleSeries = mainChart.addSeries(lc.CandlestickSeries, {
         upColor: "#22c55e", downColor: "#ef4444",
         borderUpColor: "#22c55e", borderDownColor: "#ef4444",
@@ -75,36 +104,50 @@ export default function StockPage({ params }) {
       });
       candleSeries.setData(formatted);
 
+      // MA 均線
       const maDataMap = {
         sma10: indicators.sma10, sma20: indicators.sma20,
         sma50: indicators.sma50, sma200: indicators.sma200,
         ema8: indicators.ema8, ema21: indicators.ema21,
       };
-      MA_CONFIG.forEach(({ key, color }) => {
+      MA_CONFIG.forEach(({ key }) => {
         const raw = maDataMap[key] ?? [];
         const fieldKey = key.startsWith("sma") ? "sma" : "ema";
-        const data = [...raw].reverse()
+        const d = [...raw].reverse()
           .filter(p => p[fieldKey] != null)
           .map(p => ({ time: p.date.slice(0, 10), value: p[fieldKey] }));
         const series = mainChart.addSeries(lc.LineSeries, {
-          color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+          color: maColors[key], lineWidth: 1,
+          priceLineVisible: false, lastValueVisible: false,
           visible: activeMA[key],
         });
-        series.setData(data);
+        series.setData(d);
         maSeriesRef.current[key] = series;
       });
 
+      // 布林通道
+      if (showBB && candles.length > bbPeriod) {
+        const bbData = calcBollinger(candles, bbPeriod, bbMult);
+        const bbStyle = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false };
+        const upper = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
+        const middle = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa", lineWidth: 1 });
+        const lower = mainChart.addSeries(lc.LineSeries, { ...bbStyle, color: "#60a5fa88" });
+        upper.setData(bbData.map(d => ({ time: d.time, value: d.upper })));
+        middle.setData(bbData.map(d => ({ time: d.time, value: d.middle })));
+        lower.setData(bbData.map(d => ({ time: d.time, value: d.lower })));
+        bbSeriesRef.current = [upper, middle, lower];
+      }
+
       mainChart.timeScale().fitContent();
 
+      // 成交量
       const volChart = lc.createChart(volumeContainerRef.current, chartOpts(120));
       volumeChartRef.current = volChart;
       const volSeries = volChart.addSeries(lc.HistogramSeries, {
-        priceFormat: { type: "volume" },
-        priceScaleId: "right",
+        priceFormat: { type: "volume" }, priceScaleId: "right",
       });
       volSeries.setData([...candles].reverse().map(c => ({
-        time: c.date.slice(0, 10),
-        value: c.volume,
+        time: c.date.slice(0, 10), value: c.volume,
         color: c.close >= c.open ? "#22c55e55" : "#ef444455",
       })));
       volChart.timeScale().fitContent();
@@ -116,13 +159,17 @@ export default function StockPage({ params }) {
         if (range) mainChart.timeScale().setVisibleLogicalRange(range);
       });
     });
-  }, [candles, indicators]);
+  }, [candles, indicators, showBB, bbPeriod, bbMult, maColors]);
 
   function toggleMA(key) {
     const next = !activeMA[key];
     setActiveMA(prev => ({ ...prev, [key]: next }));
     const series = maSeriesRef.current[key];
     if (series) series.applyOptions({ visible: next });
+  }
+
+  function changeMAColor(key, color) {
+    setMaColors(prev => ({ ...prev, [key]: color }));
   }
 
   const up = quote && quote.change >= 0;
@@ -148,12 +195,10 @@ export default function StockPage({ params }) {
                   {up ? "+" : ""}{quote.change?.toFixed(2)} ({quote.changePercentage?.toFixed(2)}%)
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => router.push("/stock/" + symbol + "/financials")}
-                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  📊 查看財報
-                </button>
-              </div>
+              <button onClick={() => router.push("/stock/" + symbol + "/financials")}
+                style={{ background: "#1e293b", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                📊 查看財報
+              </button>
             </div>
           </div>
 
@@ -173,13 +218,59 @@ export default function StockPage({ params }) {
             ))}
           </div>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-            {MA_CONFIG.map(({ key, label, color }) => (
-              <button key={key} onClick={() => toggleMA(key)}
-                style={{ background: activeMA[key] ? color + "33" : "#1e293b", border: `1px solid ${activeMA[key] ? color : "#334155"}`, color: activeMA[key] ? color : "#64748b", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                {label}
-              </button>
+          {/* MA 均線控制 */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12, alignItems: "center" }}>
+            {MA_CONFIG.map(({ key, label }) => (
+              <div key={key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <button onClick={() => toggleMA(key)}
+                  style={{
+                    background: activeMA[key] ? maColors[key] + "33" : "#1e293b",
+                    border: `1px solid ${activeMA[key] ? maColors[key] : "#334155"}`,
+                    color: activeMA[key] ? maColors[key] : "#64748b",
+                    borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+                  }}>
+                  {label}
+                </button>
+                <input
+                  type="color"
+                  value={maColors[key]}
+                  onChange={e => changeMAColor(key, e.target.value)}
+                  style={{ width: 22, height: 22, border: "none", borderRadius: 4, cursor: "pointer", background: "none", padding: 0 }}
+                  title={`${label} 顏色`}
+                />
+              </div>
             ))}
+          </div>
+
+          {/* 布林通道控制 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+            <button onClick={() => setShowBB(prev => !prev)}
+              style={{
+                background: showBB ? "#60a5fa33" : "#1e293b",
+                border: `1px solid ${showBB ? "#60a5fa" : "#334155"}`,
+                color: showBB ? "#60a5fa" : "#64748b",
+                borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+              }}>
+              布林通道
+            </button>
+            {showBB && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                  週期
+                  <input type="number" value={bbPeriod} min={5} max={50}
+                    onChange={e => setBbPeriod(Number(e.target.value))}
+                    style={{ width: 50, background: "#1e293b", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", padding: "3px 8px", fontSize: 12 }}
+                  />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                  倍數
+                  <input type="number" value={bbMult} min={1} max={4} step={0.5}
+                    onChange={e => setBbMult(Number(e.target.value))}
+                    style={{ width: 50, background: "#1e293b", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", padding: "3px 8px", fontSize: 12 }}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div style={{ background: "#1e293b", borderRadius: "12px 12px 0 0", padding: 16, marginBottom: 2 }}>
