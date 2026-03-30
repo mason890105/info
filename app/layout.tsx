@@ -1,6 +1,6 @@
 ﻿import type { Metadata } from "next";
 export const metadata: Metadata = {
-  title: "美股小徒弟",
+  title: "股海小徒弟",
   description: "即時美股查詢、K線圖、財報分析",
 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
