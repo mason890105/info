@@ -17,7 +17,6 @@ export default function FinancialsPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // AI ¤ÀªRª¬ºA
   const [aiText, setAiText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiDone, setAiDone] = useState(false);
@@ -40,9 +39,9 @@ export default function FinancialsPage() {
         body: JSON.stringify({ symbol }),
       });
       const json = await res.json();
-      setAiText(json.analysis || json.error || "µLªk¨ú±o¤ÀªRµ²ªG");
+      setAiText(json.analysis || json.error || "ç„¡æ³•å–å¾—åˆ†æçµæœ");
     } catch {
-      setAiText("AI ¤ÀªR¥¢±Ñ¡A½Ğµy«á¦A¸Õ");
+      setAiText("AI åˆ†æå¤±æ•—ï¼Œè«‹ç¨å¾Œå†è©¦");
     }
     setAiLoading(false);
     setAiDone(true);
@@ -52,10 +51,10 @@ export default function FinancialsPage() {
   const pct = (n: number) => n == null ? "N/A" : `${(n * 100).toFixed(1)}%`;
 
   const TABS: { key: Tab; label: string }[] = [
-    { key: "income", label: "·l¯qªí" },
-    { key: "balance", label: "¸ê²£­t¶Å" },
-    { key: "cashflow", label: "²{ª÷¬y" },
-    { key: "metrics", label: "ÃöÁä«ü¼Ğ" },
+    { key: "income", label: "æç›Šè¡¨" },
+    { key: "balance", label: "è³‡ç”¢è² å‚µ" },
+    { key: "cashflow", label: "ç¾é‡‘æµ" },
+    { key: "metrics", label: "é—œéµæŒ‡æ¨™" },
   ];
 
   const s = {
@@ -83,39 +82,37 @@ export default function FinancialsPage() {
     td: { padding: "8px 12px", borderBottom: "1px solid #1e293b" },
     aiBtn: { background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 16 },
     aiBox: { background: "#0f172a", borderRadius: 10, padding: 18, fontSize: 14, lineHeight: 1.8, color: "#cbd5e1", whiteSpace: "pre-wrap" as const },
-    transcriptLink: { display: "inline-block", marginTop: 8, color: "#3b82f6", fontSize: 13, cursor: "pointer", textDecoration: "underline" },
   };
 
-  if (loading) return <div style={{ ...s.page, textAlign: "center", padding: "80px 24px" }}>¸ü¤J¤¤...</div>;
-  if (!data) return <div style={{ ...s.page, textAlign: "center", padding: "80px 24px" }}>¸ê®Æ¨ú±o¥¢±Ñ</div>;
+  if (loading) return <div style={{ ...s.page, textAlign: "center", padding: "80px 24px" }}>è¼‰å…¥ä¸­...</div>;
+  if (!data) return <div style={{ ...s.page, textAlign: "center", padding: "80px 24px" }}>è³‡æ–™å–å¾—å¤±æ•—</div>;
 
   const { income = [], balance = [], cashflow = [] } = data;
 
-  // ¹Ïªí¸ê®Æ
   const incomeChart = [...income].reverse().map((q: any) => ({
     date: q.date?.slice(0, 7),
-    Àç¦¬: +(q.revenue / 1e9).toFixed(2),
-    ¤ò§Q: +(q.grossProfit / 1e9).toFixed(2),
-    ²b§Q: +(q.netIncome / 1e9).toFixed(2),
+    ç‡Ÿæ”¶: +(q.revenue / 1e9).toFixed(2),
+    æ¯›åˆ©: +(q.grossProfit / 1e9).toFixed(2),
+    æ·¨åˆ©: +(q.netIncome / 1e9).toFixed(2),
   }));
   const epsChart = [...income].reverse().map((q: any) => ({ date: q.date?.slice(0, 7), EPS: q.eps }));
   const balanceChart = [...balance].reverse().map((q: any) => ({
     date: q.date?.slice(0, 7),
-    Á`¸ê²£: +(q.totalAssets / 1e9).toFixed(2),
-    Á`­t¶Å: +(q.totalLiabilities / 1e9).toFixed(2),
-    ªÑªFÅv¯q: +(q.totalStockholdersEquity / 1e9).toFixed(2),
+    ç¸½è³‡ç”¢: +(q.totalAssets / 1e9).toFixed(2),
+    ç¸½è² å‚µ: +(q.totalLiabilities / 1e9).toFixed(2),
+    è‚¡æ±æ¬Šç›Š: +(q.totalStockholdersEquity / 1e9).toFixed(2),
   }));
   const cfChart = [...cashflow].reverse().map((q: any) => ({
     date: q.date?.slice(0, 7),
-    Àç·~²{ª÷¬y: +(q.operatingCashFlow / 1e9).toFixed(2),
-    ¦Û¥Ñ²{ª÷¬y: +(q.freeCashFlow / 1e9).toFixed(2),
+    ç‡Ÿæ¥­ç¾é‡‘æµ: +(q.operatingCashFlow / 1e9).toFixed(2),
+    è‡ªç”±ç¾é‡‘æµ: +(q.freeCashFlow / 1e9).toFixed(2),
   }));
   const metricsChart = income.slice(0, 8).reverse().map((q: any, i: number) => {
     const b = balance[balance.length - 1 - i];
     return {
       date: q.date?.slice(0, 7),
-      ¤ò§Q²v: +(q.grossProfitRatio * 100).toFixed(1),
-      ²b§Q²v: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
+      æ¯›åˆ©ç‡: +(q.grossProfitRatio * 100).toFixed(1),
+      æ·¨åˆ©ç‡: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
       ROE: b?.totalStockholdersEquity > 0 ? +((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1) : 0,
     };
   });
@@ -123,26 +120,18 @@ export default function FinancialsPage() {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.back} onClick={() => router.push(`/stock/${symbol}`)}>¡ö ªğ¦^</button>
-        <div style={s.title}>{symbol} °]°È³øªí</div>
-        <button
-          style={{ ...s.back, color: "#3b82f6", borderColor: "#3b82f6" }}
-          onClick={() => router.push(`/stock/${symbol}/transcripts`)}
-        >
-          ?? °]³ø³v¦r½Z
-        </button>
+        <button style={s.back} onClick={() => router.push(`/stock/${symbol}`)}>â† è¿”å›</button>
+        <div style={s.title}>{symbol} è²¡å‹™å ±è¡¨</div>
       </div>
 
-      {/* ©u/¦~¤Á´« */}
       <div style={s.periodRow}>
         {(["quarter", "annual"] as Period[]).map(p => (
           <button key={p} style={s.periodBtn(period === p)} onClick={() => setPeriod(p)}>
-            {p === "quarter" ? "©u³ø" : "¦~³ø"}
+            {p === "quarter" ? "å­£å ±" : "å¹´å ±"}
           </button>
         ))}
       </div>
 
-      {/* ¤À­¶ */}
       <div style={s.tabRow}>
         {TABS.map(t => (
           <button key={t.key} style={s.tabBtn(tab === t.key)} onClick={() => setTab(t.key)}>
@@ -151,23 +140,21 @@ export default function FinancialsPage() {
         ))}
       </div>
 
-      {/* ¢w¢w ·l¯qªí ¢w¢w */}
       {tab === "income" && (
         <>
-          {/* AI ¤ÀªR°Ï¶ô */}
           <div style={s.card}>
-            <div style={s.sectionTitle}>?? AI °]³ø¸ÑÅª</div>
+            <div style={s.sectionTitle}>ğŸ¤– AI è²¡å ±è§£è®€</div>
             {!aiDone && (
               <button style={s.aiBtn} onClick={runAI} disabled={aiLoading}>
-                {aiLoading ? "¤ÀªR¤¤..." : "¤@Áä AI °]³ø¤ÀªR"}
+                {aiLoading ? "åˆ†æä¸­..." : "ä¸€éµ AI è²¡å ±åˆ†æ"}
               </button>
             )}
-            {aiLoading && <div style={{ color: "#94a3b8", fontSize: 14 }}>Claude ¥¿¦b¤ÀªR¤¤¡A½Ğµy­Ô...</div>}
+            {aiLoading && <div style={{ color: "#94a3b8", fontSize: 14 }}>Claude æ­£åœ¨åˆ†æä¸­ï¼Œè«‹ç¨å€™...</div>}
             {aiText && <div style={s.aiBox}>{aiText}</div>}
           </div>
 
           <div style={s.card}>
-            <div style={s.sectionTitle}>Àç¦¬ / ¤ò§Q / ²b§Q¡]¤Q»õ¬ü¤¸¡^</div>
+            <div style={s.sectionTitle}>ç‡Ÿæ”¶ / æ¯›åˆ© / æ·¨åˆ©ï¼ˆåå„„ç¾å…ƒï¼‰</div>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={incomeChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -175,15 +162,15 @@ export default function FinancialsPage() {
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
                 <Legend />
-                <Bar dataKey="Àç¦¬" fill="#3b82f6" />
-                <Bar dataKey="¤ò§Q" fill="#10b981" />
-                <Bar dataKey="²b§Q" fill="#f59e0b" />
+                <Bar dataKey="ç‡Ÿæ”¶" fill="#3b82f6" />
+                <Bar dataKey="æ¯›åˆ©" fill="#10b981" />
+                <Bar dataKey="æ·¨åˆ©" fill="#f59e0b" />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           <div style={s.card}>
-            <div style={s.sectionTitle}>¨CªÑ¬Õ¾l EPS</div>
+            <div style={s.sectionTitle}>æ¯è‚¡ç›ˆé¤˜ EPS</div>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={epsChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -196,11 +183,11 @@ export default function FinancialsPage() {
           </div>
 
           <div style={s.card}>
-            <div style={s.sectionTitle}>·l¯qªí¼Æ¾Ú</div>
+            <div style={s.sectionTitle}>æç›Šè¡¨æ•¸æ“š</div>
             <table style={s.table}>
               <thead>
                 <tr>
-                  {["¤é´Á","Àç¦¬","¤ò§Q","¤ò§Q²v","²b§Q","EPS","EBITDA"].map(h => (
+                  {["æ—¥æœŸ","ç‡Ÿæ”¶","æ¯›åˆ©","æ¯›åˆ©ç‡","æ·¨åˆ©","EPS","EBITDA"].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
@@ -223,11 +210,10 @@ export default function FinancialsPage() {
         </>
       )}
 
-      {/* ¢w¢w ¸ê²£­t¶Å ¢w¢w */}
       {tab === "balance" && (
         <>
           <div style={s.card}>
-            <div style={s.sectionTitle}>¸ê²£ / ­t¶Å / ªÑªFÅv¯q¡]¤Q»õ¬ü¤¸¡^</div>
+            <div style={s.sectionTitle}>è³‡ç”¢ / è² å‚µ / è‚¡æ±æ¬Šç›Šï¼ˆåå„„ç¾å…ƒï¼‰</div>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={balanceChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -235,16 +221,16 @@ export default function FinancialsPage() {
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
                 <Legend />
-                <Bar dataKey="Á`¸ê²£" fill="#3b82f6" />
-                <Bar dataKey="Á`­t¶Å" fill="#ef4444" />
-                <Bar dataKey="ªÑªFÅv¯q" fill="#10b981" />
+                <Bar dataKey="ç¸½è³‡ç”¢" fill="#3b82f6" />
+                <Bar dataKey="ç¸½è² å‚µ" fill="#ef4444" />
+                <Bar dataKey="è‚¡æ±æ¬Šç›Š" fill="#10b981" />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div style={s.card}>
             <table style={s.table}>
               <thead>
-                <tr>{["¤é´Á","Á`¸ê²£","Á`­t¶Å","ªÑªFÅv¯q","²{ª÷","Á`¶Å°È"].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
+                <tr>{["æ—¥æœŸ","ç¸½è³‡ç”¢","ç¸½è² å‚µ","è‚¡æ±æ¬Šç›Š","ç¾é‡‘","ç¸½å‚µå‹™"].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {balance.map((q: any) => (
@@ -263,11 +249,10 @@ export default function FinancialsPage() {
         </>
       )}
 
-      {/* ¢w¢w ²{ª÷¬y ¢w¢w */}
       {tab === "cashflow" && (
         <>
           <div style={s.card}>
-            <div style={s.sectionTitle}>²{ª÷¬y¶q¡]¤Q»õ¬ü¤¸¡^</div>
+            <div style={s.sectionTitle}>ç¾é‡‘æµé‡ï¼ˆåå„„ç¾å…ƒï¼‰</div>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={cfChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -275,15 +260,15 @@ export default function FinancialsPage() {
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
                 <Legend />
-                <Bar dataKey="Àç·~²{ª÷¬y" fill="#3b82f6" />
-                <Bar dataKey="¦Û¥Ñ²{ª÷¬y" fill="#10b981" />
+                <Bar dataKey="ç‡Ÿæ¥­ç¾é‡‘æµ" fill="#3b82f6" />
+                <Bar dataKey="è‡ªç”±ç¾é‡‘æµ" fill="#10b981" />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div style={s.card}>
             <table style={s.table}>
               <thead>
-                <tr>{["¤é´Á","Àç·~²{ª÷¬y","¦Û¥Ñ²{ª÷¬y","¸ê¥»¤ä¥X","ªÑ§Q"].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
+                <tr>{["æ—¥æœŸ","ç‡Ÿæ¥­ç¾é‡‘æµ","è‡ªç”±ç¾é‡‘æµ","è³‡æœ¬æ”¯å‡º","è‚¡åˆ©"].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {cashflow.map((q: any) => (
@@ -301,10 +286,9 @@ export default function FinancialsPage() {
         </>
       )}
 
-      {/* ¢w¢w ÃöÁä«ü¼Ğ ¢w¢w */}
       {tab === "metrics" && (
         <div style={s.card}>
-          <div style={s.sectionTitle}>Àò§Q¯à¤OÁÍ¶Õ¡]%¡^</div>
+          <div style={s.sectionTitle}>ç²åˆ©èƒ½åŠ›è¶¨å‹¢ï¼ˆ%ï¼‰</div>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={metricsChart}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -312,8 +296,8 @@ export default function FinancialsPage() {
               <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
               <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
               <Legend />
-              <Line type="monotone" dataKey="¤ò§Q²v" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="²b§Q²v" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="æ¯›åˆ©ç‡" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="æ·¨åˆ©ç‡" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="ROE" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
