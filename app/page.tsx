@@ -1,5 +1,5 @@
 ﻿"use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const POPULAR = [
@@ -13,9 +13,36 @@ const POPULAR = [
   { symbol: "TSM", name: "台積電" },
 ];
 
+// 三大指數 + 羅素2000
+const INDICES = [
+  { symbol: "%5EGSPC", label: "S&P 500",    key: "^GSPC" },
+  { symbol: "%5EIXIC", label: "Nasdaq",      key: "^IXIC" },
+  { symbol: "%5EDJI",  label: "道瓊",        key: "^DJI"  },
+  { symbol: "%5ERUT",  label: "羅素 2000",   key: "^RUT"  },
+];
+
+interface IndexData {
+  price: number;
+  change: number;
+  changePercentage: number;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [input, setInput] = useState("");
+  const [indices, setIndices] = useState<Record<string, IndexData>>({});
+  const [indicesLoading, setIndicesLoading] = useState(true);
+
+  useEffect(() => {
+    const symbols = INDICES.map(i => i.symbol).join(",");
+    fetch(`/api/indices?symbols=${symbols}`)
+      .then(r => r.json())
+      .then(data => {
+        setIndices(data);
+        setIndicesLoading(false);
+      })
+      .catch(() => setIndicesLoading(false));
+  }, []);
 
   function go(symbol: string) {
     if (!symbol.trim()) return;
@@ -34,12 +61,45 @@ export default function HomePage() {
       <h1 style={{ fontSize: 40, fontWeight: 800, marginBottom: 8, textAlign: "center" }}>
         即時美股查詢
       </h1>
-      <p style={{ fontSize: 16, color: "#64748b", marginBottom: 40, textAlign: "center" }}>
+      <p style={{ fontSize: 16, color: "#64748b", marginBottom: 32, textAlign: "center" }}>
         輸入股票代號，查看即時報價、K線圖與財報數據
       </p>
 
+      {/* 三大指數 + 羅素2000 */}
+      <div style={{ width: "100%", maxWidth: 560, marginBottom: 32 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          {INDICES.map(idx => {
+            const d = indices[idx.key];
+            const up = d ? d.changePercentage >= 0 : null;
+            return (
+              <div key={idx.key} style={{
+                background: "#1e293b", borderRadius: 10, padding: "12px 10px", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 11, color: "#475569", marginBottom: 4, fontWeight: 600 }}>
+                  {idx.label}
+                </div>
+                {indicesLoading ? (
+                  <div style={{ fontSize: 13, color: "#334155" }}>—</div>
+                ) : d ? (
+                  <>
+                    <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>
+                      {d.price?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
+                      {up ? "▲" : "▼"} {Math.abs(d.changePercentage).toFixed(2)}%
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: "#475569" }}>無資料</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 搜尋框 */}
-      <div style={{ display: "flex", gap: 8, width: "100%", maxWidth: 480, marginBottom: 32 }}>
+      <div style={{ display: "flex", gap: 8, width: "100%", maxWidth: 560, marginBottom: 28 }}>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -64,7 +124,7 @@ export default function HomePage() {
       </div>
 
       {/* 熱門股票 */}
-      <div style={{ width: "100%", maxWidth: 480, marginBottom: 20 }}>
+      <div style={{ width: "100%", maxWidth: 560, marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: "#475569", marginBottom: 12, fontWeight: 600 }}>熱門股票</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
           {POPULAR.map(s => (
@@ -86,7 +146,7 @@ export default function HomePage() {
       </div>
 
       {/* 大盤位階分析入口 */}
-      <div style={{ width: "100%", maxWidth: 480 }}>
+      <div style={{ width: "100%", maxWidth: 560 }}>
         <button
           onClick={() => router.push("/market")}
           style={{
