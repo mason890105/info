@@ -1,377 +1,323 @@
 ﻿"use client";
-import { use, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  LineChart, Line, CartesianGrid, Legend
+  BarChart, Bar, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
-const TABS = ["損益表", "資產負債", "現金流", "關鍵指標"];
+type Period = "quarter" | "annual";
+type Tab = "income" | "balance" | "cashflow" | "metrics";
 
-export default function FinancialsPage({ params }) {
-  const { symbol: raw } = use(params);
-  const symbol = raw.toUpperCase();
+export default function FinancialsPage() {
+  const { symbol } = useParams<{ symbol: string }>();
   const router = useRouter();
-  const [data, setData] = useState(null);
-  const [news, setNews] = useState([]);
-  const [period, setPeriod] = useState("quarter");
-  const [activeTab, setActiveTab] = useState("損益表");
+  const [period, setPeriod] = useState<Period>("quarter");
+  const [tab, setTab] = useState<Tab>("income");
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // AI 分析狀態
+  const [aiText, setAiText] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDone, setAiDone] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      fetch(`/api/stock/${symbol}?tab=financials&period=${period}`).then(r => r.json()),
-      fetch(`/api/stock/${symbol}?tab=news`).then(r => r.json()),
-    ]).then(([fin, n]) => {
-      setData(fin);
-      setNews(n.news ?? []);
-      setLoading(false);
-    });
+    fetch(`/api/stock/${symbol}?tab=financials&period=${period}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); });
   }, [symbol, period]);
 
-  const income = data?.income?.slice(0, 8).reverse() || [];
-  const balance = data?.balance?.slice(0, 8).reverse() || [];
-  const cashflow = data?.cashflow?.slice(0, 8).reverse() || [];
+  async function runAI() {
+    setAiLoading(true);
+    setAiText("");
+    setAiDone(false);
+    try {
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      });
+      const json = await res.json();
+      setAiText(json.analysis || json.error || "無法取得分析結果");
+    } catch {
+      setAiText("AI 分析失敗，請稍後再試");
+    }
+    setAiLoading(false);
+    setAiDone(true);
+  }
 
-  const revenueData = income.map(q => ({
-    date: q.date.slice(0, 7),
+  const fmt = (n: number) => n == null ? "N/A" : `$${(n / 1e9).toFixed(2)}B`;
+  const pct = (n: number) => n == null ? "N/A" : `${(n * 100).toFixed(1)}%`;
+
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "income", label: "損益表" },
+    { key: "balance", label: "資產負債" },
+    { key: "cashflow", label: "現金流" },
+    { key: "metrics", label: "關鍵指標" },
+  ];
+
+  const s = {
+    page: { minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: "24px" },
+    header: { display: "flex", alignItems: "center", gap: 16, marginBottom: 24 },
+    back: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "8px 16px", color: "#94a3b8", cursor: "pointer", fontSize: 14 },
+    title: { fontSize: 24, fontWeight: 800 },
+    periodRow: { display: "flex", gap: 8, marginBottom: 16 },
+    periodBtn: (active: boolean) => ({
+      background: active ? "#3b82f6" : "#1e293b",
+      border: `1px solid ${active ? "#3b82f6" : "#334155"}`,
+      borderRadius: 8, padding: "6px 16px", color: active ? "#fff" : "#94a3b8",
+      cursor: "pointer", fontSize: 13, fontWeight: active ? 700 : 400,
+    }),
+    tabRow: { display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #334155" },
+    tabBtn: (active: boolean) => ({
+      background: "none", border: "none", borderBottom: active ? "2px solid #3b82f6" : "2px solid transparent",
+      padding: "10px 20px", color: active ? "#3b82f6" : "#64748b",
+      cursor: "pointer", fontSize: 14, fontWeight: active ? 700 : 400,
+    }),
+    card: { background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 },
+    sectionTitle: { fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#cbd5e1" },
+    table: { width: "100%", borderCollapse: "collapse" as const, fontSize: 13 },
+    th: { padding: "8px 12px", textAlign: "left" as const, color: "#64748b", borderBottom: "1px solid #334155" },
+    td: { padding: "8px 12px", borderBottom: "1px solid #1e293b" },
+    aiBtn: { background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 16 },
+    aiBox: { background: "#0f172a", borderRadius: 10, padding: 18, fontSize: 14, lineHeight: 1.8, color: "#cbd5e1", whiteSpace: "pre-wrap" as const },
+    transcriptLink: { display: "inline-block", marginTop: 8, color: "#3b82f6", fontSize: 13, cursor: "pointer", textDecoration: "underline" },
+  };
+
+  if (loading) return <div style={{ ...s.page, textAlign: "center", paddingTop: 80 }}>載入中...</div>;
+  if (!data) return <div style={{ ...s.page, textAlign: "center", paddingTop: 80 }}>資料取得失敗</div>;
+
+  const { income = [], balance = [], cashflow = [] } = data;
+
+  // 圖表資料
+  const incomeChart = [...income].reverse().map((q: any) => ({
+    date: q.date?.slice(0, 7),
     營收: +(q.revenue / 1e9).toFixed(2),
     毛利: +(q.grossProfit / 1e9).toFixed(2),
     淨利: +(q.netIncome / 1e9).toFixed(2),
   }));
-
-  const epsData = income.map(q => ({
-    date: q.date.slice(0, 7),
-    EPS: +q.eps.toFixed(2),
-  }));
-
-  const marginData = income.map(q => ({
-    date: q.date.slice(0, 7),
-    毛利率: q.revenue > 0 ? +((q.grossProfit / q.revenue) * 100).toFixed(1) : 0,
-    營業利益率: q.revenue > 0 ? +((q.operatingIncome / q.revenue) * 100).toFixed(1) : 0,
-    淨利率: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
-  }));
-
-  const balanceData = balance.map(q => ({
-    date: q.date.slice(0, 7),
+  const epsChart = [...income].reverse().map((q: any) => ({ date: q.date?.slice(0, 7), EPS: q.eps }));
+  const balanceChart = [...balance].reverse().map((q: any) => ({
+    date: q.date?.slice(0, 7),
     總資產: +(q.totalAssets / 1e9).toFixed(2),
     總負債: +(q.totalLiabilities / 1e9).toFixed(2),
     股東權益: +(q.totalStockholdersEquity / 1e9).toFixed(2),
   }));
-
-  const cashflowData = cashflow.map(q => ({
-    date: q.date.slice(0, 7),
+  const cfChart = [...cashflow].reverse().map((q: any) => ({
+    date: q.date?.slice(0, 7),
     營業現金流: +(q.operatingCashFlow / 1e9).toFixed(2),
     自由現金流: +(q.freeCashFlow / 1e9).toFixed(2),
-    資本支出: +(Math.abs(q.capitalExpenditure) / 1e9).toFixed(2),
   }));
-
-  const roeData = income.map((q, i) => {
-    const b = data?.balance?.[data.balance.length - 1 - i];
-    const roe = b?.totalStockholdersEquity > 0
-      ? +((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1) : 0;
-    const roa = b?.totalAssets > 0
-      ? +((q.netIncome / b.totalAssets) * 100).toFixed(1) : 0;
-    const debtRatio = b?.totalAssets > 0
-      ? +((b.totalLiabilities / b.totalAssets) * 100).toFixed(1) : 0;
-    return { date: q.date.slice(0, 7), ROE: roe, ROA: roa, 負債比率: debtRatio };
+  const metricsChart = income.slice(0, 8).reverse().map((q: any, i: number) => {
+    const b = balance[balance.length - 1 - i];
+    return {
+      date: q.date?.slice(0, 7),
+      毛利率: +(q.grossProfitRatio * 100).toFixed(1),
+      淨利率: q.revenue > 0 ? +((q.netIncome / q.revenue) * 100).toFixed(1) : 0,
+      ROE: b?.totalStockholdersEquity > 0 ? +((q.netIncome / b.totalStockholdersEquity) * 100).toFixed(1) : 0,
+    };
   });
 
-  const tt = { contentStyle: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8 } };
-  const card = (label, value, color = "#e2e8f0") => (
-    <div style={{ background: "#0f172a", borderRadius: 10, padding: "16px 20px", border: "1px solid #334155" }}>
-      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
-    </div>
-  );
-
   return (
-    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", fontFamily: "system-ui", padding: "24px", maxWidth: 960, margin: "0 auto" }}>
-      <button onClick={() => router.push("/stock/" + symbol)}
-        style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}>
-        ← 返回 {symbol}
-      </button>
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{symbol} 財務報告</div>
-          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>損益表 · 資產負債 · 現金流 · 關鍵指標</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {["quarter", "annual"].map(p => (
-            <button key={p} onClick={() => setPeriod(p)}
-              style={{ background: period === p ? "#3b82f6" : "#1e293b", color: period === p ? "#fff" : "#94a3b8", border: "1px solid #334155", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-              {p === "quarter" ? "季報" : "年報"}
-            </button>
-          ))}
-        </div>
+    <div style={s.page}>
+      <div style={s.header}>
+        <button style={s.back} onClick={() => router.push(`/stock/${symbol}`)}>← 返回</button>
+        <div style={s.title}>{symbol} 財務報表</div>
+        <button
+          style={{ ...s.back, color: "#3b82f6", borderColor: "#3b82f6" }}
+          onClick={() => router.push(`/stock/${symbol}/transcripts`)}
+        >
+          📄 財報逐字稿
+        </button>
       </div>
 
-      {/* 分頁籤 */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #334155", paddingBottom: 0 }}>
-        {TABS.map(t => (
-          <button key={t} onClick={() => setActiveTab(t)}
-            style={{ background: "none", border: "none", borderBottom: activeTab === t ? "2px solid #3b82f6" : "2px solid transparent", color: activeTab === t ? "#3b82f6" : "#64748b", fontSize: 14, fontWeight: 600, padding: "10px 20px", cursor: "pointer", marginBottom: -1 }}>
-            {t}
+      {/* 季/年切換 */}
+      <div style={s.periodRow}>
+        {(["quarter", "annual"] as Period[]).map(p => (
+          <button key={p} style={s.periodBtn(period === p)} onClick={() => setPeriod(p)}>
+            {p === "quarter" ? "季報" : "年報"}
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: 80, color: "#64748b" }}>載入中...</div>
-      ) : (
+      {/* 分頁 */}
+      <div style={s.tabRow}>
+        {TABS.map(t => (
+          <button key={t.key} style={s.tabBtn(tab === t.key)} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── 損益表 ── */}
+      {tab === "income" && (
         <>
-          {/* 損益表 */}
-          {activeTab === "損益表" && (
-            <>
-              {/* 摘要卡片 */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
-                {card("最新營收", `$${(data?.income?.[0]?.revenue/1e9).toFixed(2)}B`)}
-                {card("最新EPS", `$${data?.income?.[0]?.eps?.toFixed(2)}`, "#a78bfa")}
-                {card("毛利率", `${data?.income?.[0]?.revenue > 0 ? ((data.income[0].grossProfit/data.income[0].revenue)*100).toFixed(1) : "N/A"}%`, "#22c55e")}
-                {card("淨利率", `${data?.income?.[0]?.revenue > 0 ? ((data.income[0].netIncome/data.income[0].revenue)*100).toFixed(1) : "N/A"}%`, "#f59e0b")}
-              </div>
+          {/* AI 分析區塊 */}
+          <div style={s.card}>
+            <div style={s.sectionTitle}>🤖 AI 財報解讀</div>
+            {!aiDone && (
+              <button style={s.aiBtn} onClick={runAI} disabled={aiLoading}>
+                {aiLoading ? "分析中..." : "一鍵 AI 財報分析"}
+              </button>
+            )}
+            {aiLoading && <div style={{ color: "#94a3b8", fontSize: 14 }}>Claude 正在分析中，請稍候...</div>}
+            {aiText && <div style={s.aiBox}>{aiText}</div>}
+          </div>
 
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>營收 / 毛利 / 淨利（十億美元）</div>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={revenueData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <Tooltip {...tt} />
-                    <Legend />
-                    <Bar dataKey="營收" fill="#3b82f6" radius={[4,4,0,0]} />
-                    <Bar dataKey="毛利" fill="#22c55e" radius={[4,4,0,0]} />
-                    <Bar dataKey="淨利" fill="#f59e0b" radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          <div style={s.card}>
+            <div style={s.sectionTitle}>營收 / 毛利 / 淨利（十億美元）</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={incomeChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
+                <Legend />
+                <Bar dataKey="營收" fill="#3b82f6" />
+                <Bar dataKey="毛利" fill="#10b981" />
+                <Bar dataKey="淨利" fill="#f59e0b" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>每股盈餘（EPS）</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={epsData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <Tooltip {...tt} />
-                    <Line type="monotone" dataKey="EPS" stroke="#a78bfa" strokeWidth={2} dot={{ fill: "#a78bfa" }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+          <div style={s.card}>
+            <div style={s.sectionTitle}>每股盈餘 EPS</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={epsChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
+                <Line type="monotone" dataKey="EPS" stroke="#a78bfa" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
 
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>財報數據表</div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid #334155" }}>
-                        {["日期", "營收", "毛利", "營業利益", "淨利", "EPS", "毛利率"].map(h => (
-                          <th key={h} style={{ padding: "8px 12px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data?.income?.slice(0, 8).map((q, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #1e293b" }}>
-                          <td style={{ padding: "10px 12px", color: "#94a3b8" }}>{q.date.slice(0, 7)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>${(q.revenue/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#22c55e" }}>${(q.grossProfit/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>${(q.operatingIncome/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#f59e0b" }}>${(q.netIncome/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#a78bfa" }}>${q.eps.toFixed(2)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>{q.revenue > 0 ? ((q.grossProfit/q.revenue)*100).toFixed(1) : "N/A"}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* 資產負債 */}
-          {activeTab === "資產負債" && (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
-                {card("總資產", `$${(data?.balance?.[0]?.totalAssets/1e9).toFixed(2)}B`)}
-                {card("總負債", `$${(data?.balance?.[0]?.totalLiabilities/1e9).toFixed(2)}B`, "#ef4444")}
-                {card("現金", `$${(data?.balance?.[0]?.cashAndCashEquivalents/1e9).toFixed(2)}B`, "#22c55e")}
-                {card("總債務", `$${(data?.balance?.[0]?.totalDebt/1e9).toFixed(2)}B`, "#f59e0b")}
-                {card("股東權益", `$${(data?.balance?.[0]?.totalStockholdersEquity/1e9).toFixed(2)}B`, "#3b82f6")}
-                {card("負債比率", `${data?.balance?.[0]?.totalAssets > 0 ? ((data.balance[0].totalLiabilities/data.balance[0].totalAssets)*100).toFixed(1) : "N/A"}%`, "#fb7185")}
-              </div>
-
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>資產 / 負債 / 股東權益（十億美元）</div>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={balanceData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <Tooltip {...tt} />
-                    <Legend />
-                    <Bar dataKey="總資產" fill="#3b82f6" radius={[4,4,0,0]} />
-                    <Bar dataKey="總負債" fill="#ef4444" radius={[4,4,0,0]} />
-                    <Bar dataKey="股東權益" fill="#22c55e" radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>資產負債數據表</div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid #334155" }}>
-                        {["日期", "總資產", "總負債", "股東權益", "現金", "總債務", "負債比率"].map(h => (
-                          <th key={h} style={{ padding: "8px 12px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data?.balance?.slice(0, 8).map((q, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #1e293b" }}>
-                          <td style={{ padding: "10px 12px", color: "#94a3b8" }}>{q.date.slice(0, 7)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>${(q.totalAssets/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#ef4444" }}>${(q.totalLiabilities/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#3b82f6" }}>${(q.totalStockholdersEquity/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#22c55e" }}>${(q.cashAndCashEquivalents/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#f59e0b" }}>${(q.totalDebt/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#fb7185" }}>{q.totalAssets > 0 ? ((q.totalLiabilities/q.totalAssets)*100).toFixed(1) : "N/A"}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* 現金流 */}
-          {activeTab === "現金流" && (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
-                {card("營業現金流", `$${(data?.cashflow?.[0]?.operatingCashFlow/1e9).toFixed(2)}B`, "#22c55e")}
-                {card("自由現金流", `$${(data?.cashflow?.[0]?.freeCashFlow/1e9).toFixed(2)}B`, "#3b82f6")}
-                {card("資本支出", `$${(Math.abs(data?.cashflow?.[0]?.capitalExpenditure)/1e9).toFixed(2)}B`, "#f59e0b")}
-                {card("股利發放", `$${(Math.abs(data?.cashflow?.[0]?.dividendsPaid ?? 0)/1e9).toFixed(2)}B`, "#a78bfa")}
-              </div>
-
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>現金流量趨勢（十億美元）</div>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={cashflowData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <Tooltip {...tt} />
-                    <Legend />
-                    <Bar dataKey="營業現金流" fill="#22c55e" radius={[4,4,0,0]} />
-                    <Bar dataKey="自由現金流" fill="#3b82f6" radius={[4,4,0,0]} />
-                    <Bar dataKey="資本支出" fill="#f59e0b" radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>現金流數據表</div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid #334155" }}>
-                        {["日期", "營業現金流", "自由現金流", "資本支出", "股利發放"].map(h => (
-                          <th key={h} style={{ padding: "8px 12px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data?.cashflow?.slice(0, 8).map((q, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #1e293b" }}>
-                          <td style={{ padding: "10px 12px", color: "#94a3b8" }}>{q.date.slice(0, 7)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#22c55e" }}>${(q.operatingCashFlow/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#3b82f6" }}>${(q.freeCashFlow/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#f59e0b" }}>${(Math.abs(q.capitalExpenditure)/1e9).toFixed(2)}B</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#a78bfa" }}>${(Math.abs(q.dividendsPaid ?? 0)/1e9).toFixed(2)}B</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* 關鍵指標 */}
-          {activeTab === "關鍵指標" && (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
-                {card("ROE", `${roeData[roeData.length-1]?.ROE ?? "N/A"}%`, "#22c55e")}
-                {card("ROA", `${roeData[roeData.length-1]?.ROA ?? "N/A"}%`, "#3b82f6")}
-                {card("負債比率", `${roeData[roeData.length-1]?.負債比率 ?? "N/A"}%`, "#ef4444")}
-                {card("毛利率", `${marginData[marginData.length-1]?.毛利率 ?? "N/A"}%`, "#f59e0b")}
-                {card("營業利益率", `${marginData[marginData.length-1]?.營業利益率 ?? "N/A"}%`, "#a78bfa")}
-                {card("淨利率", `${marginData[marginData.length-1]?.淨利率 ?? "N/A"}%`, "#fb7185")}
-              </div>
-
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#94a3b8" }}>獲利能力趨勢</div>
-                <div style={{ fontSize: 12, color: "#475569", marginBottom: 16 }}>毛利率 · 營業利益率 · 淨利率（%）</div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={marginData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} unit="%" />
-                    <Tooltip {...tt} formatter={v => v + "%"} />
-                    <Legend />
-                    <Line type="monotone" dataKey="毛利率" stroke="#22c55e" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="營業利益率" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="淨利率" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#94a3b8" }}>ROE / ROA 趨勢</div>
-                <div style={{ fontSize: 12, color: "#475569", marginBottom: 16 }}>股東權益報酬率 · 資產報酬率（%）</div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={roeData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} unit="%" />
-                    <Tooltip {...tt} formatter={v => v + "%"} />
-                    <Legend />
-                    <Line type="monotone" dataKey="ROE" stroke="#22c55e" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="ROA" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="負債比率" stroke="#ef4444" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-
-          {/* 最新新聞 */}
-          <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginTop: 20 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#94a3b8" }}>📰 最新相關新聞</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {news.slice(0, 6).map((item, i) => (
-                <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
-                  style={{ display: "flex", gap: 16, textDecoration: "none", background: "#0f172a", borderRadius: 10, padding: 16, border: "1px solid #334155" }}>
-                  {item.image && (
-                    <img src={item.image} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
-                  )}
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 6, lineHeight: 1.4 }}>{item.title}</div>
-                    <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>{item.text?.slice(0, 100)}...</div>
-                    <div style={{ fontSize: 11, color: "#475569" }}>{item.publisher} · {item.publishedDate?.slice(0, 10)}</div>
-                  </div>
-                </a>
-              ))}
-            </div>
+          <div style={s.card}>
+            <div style={s.sectionTitle}>損益表數據</div>
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  {["日期","營收","毛利","毛利率","淨利","EPS","EBITDA"].map(h => (
+                    <th key={h} style={s.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {income.map((q: any) => (
+                  <tr key={q.date}>
+                    <td style={s.td}>{q.date?.slice(0, 10)}</td>
+                    <td style={s.td}>{fmt(q.revenue)}</td>
+                    <td style={s.td}>{fmt(q.grossProfit)}</td>
+                    <td style={s.td}>{pct(q.grossProfitRatio)}</td>
+                    <td style={{ ...s.td, color: q.netIncome >= 0 ? "#10b981" : "#ef4444" }}>{fmt(q.netIncome)}</td>
+                    <td style={s.td}>${q.eps?.toFixed(2)}</td>
+                    <td style={s.td}>{fmt(q.ebitda)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
+      )}
+
+      {/* ── 資產負債 ── */}
+      {tab === "balance" && (
+        <>
+          <div style={s.card}>
+            <div style={s.sectionTitle}>資產 / 負債 / 股東權益（十億美元）</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={balanceChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
+                <Legend />
+                <Bar dataKey="總資產" fill="#3b82f6" />
+                <Bar dataKey="總負債" fill="#ef4444" />
+                <Bar dataKey="股東權益" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={s.card}>
+            <table style={s.table}>
+              <thead>
+                <tr>{["日期","總資產","總負債","股東權益","現金","總債務"].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {balance.map((q: any) => (
+                  <tr key={q.date}>
+                    <td style={s.td}>{q.date?.slice(0, 10)}</td>
+                    <td style={s.td}>{fmt(q.totalAssets)}</td>
+                    <td style={s.td}>{fmt(q.totalLiabilities)}</td>
+                    <td style={s.td}>{fmt(q.totalStockholdersEquity)}</td>
+                    <td style={s.td}>{fmt(q.cashAndCashEquivalents)}</td>
+                    <td style={s.td}>{fmt(q.totalDebt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ── 現金流 ── */}
+      {tab === "cashflow" && (
+        <>
+          <div style={s.card}>
+            <div style={s.sectionTitle}>現金流量（十億美元）</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={cfChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
+                <Legend />
+                <Bar dataKey="營業現金流" fill="#3b82f6" />
+                <Bar dataKey="自由現金流" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={s.card}>
+            <table style={s.table}>
+              <thead>
+                <tr>{["日期","營業現金流","自由現金流","資本支出","股利"].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {cashflow.map((q: any) => (
+                  <tr key={q.date}>
+                    <td style={s.td}>{q.date?.slice(0, 10)}</td>
+                    <td style={s.td}>{fmt(q.operatingCashFlow)}</td>
+                    <td style={s.td}>{fmt(q.freeCashFlow)}</td>
+                    <td style={s.td}>{fmt(q.capitalExpenditure)}</td>
+                    <td style={s.td}>{fmt(q.dividendsPaid)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ── 關鍵指標 ── */}
+      {tab === "metrics" && (
+        <div style={s.card}>
+          <div style={s.sectionTitle}>獲利能力趨勢（%）</div>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={metricsChart}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+              <Tooltip contentStyle={{ background: "#1e293b", border: "none", color: "#e2e8f0" }} />
+              <Legend />
+              <Line type="monotone" dataKey="毛利率" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="淨利率" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="ROE" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </div>
   );
